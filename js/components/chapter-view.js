@@ -231,6 +231,30 @@ function launchGame(container, game, data, app) {
         case 'E21': // Oz Degerlendirme
             renderChecklistGame(container, game, data, app);
             break;
+        case 'E13': // Sebep-Sonuc Zinciri
+            renderCauseEffectGame(container, game, data, app);
+            break;
+        case 'E14': // Zaman Cizgisi
+            renderTimelineGame(container, game, data, app);
+            break;
+        case 'E15': // Karakter-Rol Eslestirme
+            renderCharacterRoleGame(container, game, data, app);
+            break;
+        case 'E16': // Mesaj Avi
+            renderMessageHuntGame(container, game, data, app);
+            break;
+        case 'E17': // Karsilastirma Matrisi
+            renderComparisonGame(container, game, data, app);
+            break;
+        case 'E18': // Siniflandirma Sepeti
+            renderClassificationGame(container, game, data, app);
+            break;
+        case 'E20': // Acik Uclu Dusunce Kutusu
+            renderOpenEndedGame(container, game, data, app);
+            break;
+        case 'E22': // Performans Gorevi
+            renderPerformanceTask(container, game, data, app);
+            break;
         default:
             renderGenericGame(container, game, data, app);
     }
@@ -691,6 +715,632 @@ function renderFillBlankGame(container, game, data, app) {
     }
     // Fallback to mini quiz format
     renderMiniQuiz(container, game, data, app);
+}
+
+// ===== CLASSIFICATION ENGINE (E18) =====
+function renderClassificationGame(container, game, data, app) {
+    const categories = game.veri?.kategoriler || [];
+    const items = game.veri?.ogeler || [];
+    if (categories.length === 0 || items.length === 0) { renderGenericGame(container, game, data, app); return; }
+
+    const shuffled = [...items].sort(() => Math.random() - 0.5);
+    const placed = {}; // itemIndex -> category
+    let currentItem = 0;
+
+    function render() {
+        if (currentItem >= shuffled.length) {
+            let correct = 0;
+            shuffled.forEach((item, i) => { if (placed[i] === item.kategori) correct++; });
+            const stars = correct === shuffled.length ? 3 : correct >= shuffled.length * 0.7 ? 2 : 1;
+            const xp = correct * 5;
+            store.completeChapter(data.grade, data.unitId, data.chapterId, xp, stars);
+            if (stars >= 2) showConfetti();
+            showXpPopup(xp);
+            playSound('complete');
+            container.innerHTML = `
+                <div class="quiz-result card anim-bounce-in text-center" style="padding:2rem;">
+                    <span style="font-size:3rem;">${stars === 3 ? '&#127942;' : '&#11088;'}</span>
+                    <h2 class="mt-md">${correct} / ${shuffled.length} Dogru</h2>
+                    <div class="stars mt-md" style="font-size:2rem; justify-content:center;">${'&#11088;'.repeat(stars)}${'&#9734;'.repeat(3 - stars)}</div>
+                    <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
+                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                </div>`;
+            return;
+        }
+
+        const item = shuffled[currentItem];
+        container.innerHTML = `
+            <div class="classification-container anim-fade-in-up">
+                <h3 class="mb-md">&#128230; Siniflandirma</h3>
+                <div class="progress-bar mb-md" style="height:4px;">
+                    <div class="fill" style="width:${(currentItem / shuffled.length) * 100}%"></div>
+                </div>
+                <p class="text-muted mb-md">${currentItem + 1} / ${shuffled.length}</p>
+                <div class="card" style="padding:1.5rem; text-align:center; min-height:80px; display:flex; align-items:center; justify-content:center; border:2px solid var(--primary); background:var(--bg-main);">
+                    <p style="font-size:1.15rem; font-weight:600;">${item.metin}</p>
+                </div>
+                <p class="text-muted mt-lg mb-md text-center">Bu hangi kategoriye ait?</p>
+                <div class="classification-bins" style="display:flex; gap:1rem; flex-wrap:wrap;">
+                    ${categories.map(cat => `
+                        <button class="btn btn-lg classify-btn" style="flex:1; min-width:140px; padding:1.2rem; border:2px solid var(--border); background:white; font-weight:600; transition:all 0.2s;" data-cat="${cat}">
+                            ${cat}
+                        </button>
+                    `).join('')}
+                </div>
+            </div>`;
+
+        container.querySelectorAll('.classify-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                placed[currentItem] = btn.dataset.cat;
+                const isCorrect = btn.dataset.cat === item.kategori;
+                if (isCorrect) {
+                    btn.style.background = '#e8f8ee'; btn.style.borderColor = '#4ECB71'; btn.style.color = '#1a7a3a';
+                    playSound('correct');
+                } else {
+                    btn.style.background = '#fde8e8'; btn.style.borderColor = '#E74C3C'; btn.style.color = '#c0392b';
+                    playSound('wrong');
+                    container.querySelectorAll('.classify-btn').forEach(b => {
+                        if (b.dataset.cat === item.kategori) { b.style.background = '#e8f8ee'; b.style.borderColor = '#4ECB71'; }
+                    });
+                }
+                container.querySelectorAll('.classify-btn').forEach(b => b.disabled = true);
+                currentItem++;
+                setTimeout(() => render(), 800);
+            });
+        });
+    }
+    render();
+}
+
+// ===== CAUSE-EFFECT ENGINE (E13) =====
+function renderCauseEffectGame(container, game, data, app) {
+    const cards = game.veri?.kartlar || [];
+    if (cards.length === 0) { renderGenericGame(container, game, data, app); return; }
+
+    // User needs to put chain in order
+    const shuffled = [...cards].sort(() => Math.random() - 0.5);
+    let userOrder = [...shuffled];
+
+    function render() {
+        container.innerHTML = `
+            <div class="cause-effect-container anim-fade-in-up">
+                <h3 class="mb-md">&#128257; Sebep-Sonuc Zinciri</h3>
+                <p class="text-muted mb-lg">${game.hedef || 'Kartlari sebep-sonuc sirasina gore dizin.'}</p>
+                <div class="ordering-list">
+                    ${userOrder.map((card, i) => `
+                        <div class="ordering-item card" style="border-left: 4px solid ${i === 0 ? 'var(--primary)' : 'var(--secondary)'};" data-index="${i}">
+                            <span class="ordering-num" style="background: ${i === 0 ? 'var(--primary)' : 'var(--secondary)'}; color:white;">${i + 1}</span>
+                            <span class="ordering-text">${card.metin}</span>
+                            <div class="ordering-btns">
+                                <button class="btn btn-sm btn-secondary order-up" data-index="${i}" ${i === 0 ? 'disabled' : ''}>&#9650;</button>
+                                <button class="btn btn-sm btn-secondary order-down" data-index="${i}" ${i === userOrder.length - 1 ? 'disabled' : ''}>&#9660;</button>
+                            </div>
+                        </div>
+                        ${i < userOrder.length - 1 ? '<div style="text-align:center; color:var(--text-secondary); font-size:1.2rem;">&#8595;</div>' : ''}
+                    `).join('')}
+                </div>
+                <button class="btn btn-primary btn-lg w-full mt-xl" id="check-chain">Kontrol Et</button>
+            </div>`;
+
+        container.querySelectorAll('.order-up').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.dataset.index);
+                if (idx > 0) { [userOrder[idx], userOrder[idx-1]] = [userOrder[idx-1], userOrder[idx]]; render(); }
+            });
+        });
+        container.querySelectorAll('.order-down').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.dataset.index);
+                if (idx < userOrder.length - 1) { [userOrder[idx], userOrder[idx+1]] = [userOrder[idx+1], userOrder[idx]]; render(); }
+            });
+        });
+
+        container.querySelector('#check-chain')?.addEventListener('click', () => {
+            let correct = 0;
+            userOrder.forEach((c, i) => { if (c.id === cards[i].id) correct++; });
+            const stars = correct === cards.length ? 3 : correct >= cards.length * 0.7 ? 2 : 1;
+            const xp = correct * 5;
+            store.completeChapter(data.grade, data.unitId, data.chapterId, xp, stars);
+            if (stars >= 2) showConfetti();
+            showXpPopup(xp);
+            playSound(stars === 3 ? 'complete' : 'correct');
+            container.innerHTML = `
+                <div class="quiz-result card anim-bounce-in text-center" style="padding:2rem;">
+                    <span style="font-size:3rem;">${stars === 3 ? '&#127942;' : '&#11088;'}</span>
+                    <h2 class="mt-md">${correct} / ${cards.length} Dogru Siralama</h2>
+                    <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
+                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                </div>`;
+        });
+    }
+    render();
+}
+
+// ===== TIMELINE ENGINE (E14) =====
+function renderTimelineGame(container, game, data, app) {
+    const events = game.veri?.olaylar || [];
+    if (events.length === 0) { renderGenericGame(container, game, data, app); return; }
+
+    const shuffled = [...events].sort(() => Math.random() - 0.5);
+    let userOrder = [...shuffled];
+
+    function render() {
+        container.innerHTML = `
+            <div class="timeline-container anim-fade-in-up">
+                <h3 class="mb-md">&#128197; Zaman Cizgisi</h3>
+                <p class="text-muted mb-lg">${game.hedef || 'Olaylari kronolojik siraya dizin.'}</p>
+                <div class="timeline-list">
+                    ${userOrder.map((evt, i) => `
+                        <div class="timeline-item card" data-index="${i}" style="position:relative; padding:1rem 1rem 1rem 4rem; border-left:3px solid var(--primary);">
+                            <div style="position:absolute; left:-12px; top:50%; transform:translateY(-50%); width:22px; height:22px; border-radius:50%; background:var(--primary); color:white; display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:700;">${i + 1}</div>
+                            <div style="font-weight:600; color:var(--secondary); font-size:0.85rem; margin-bottom:0.25rem;">${evt.tarih || ''}</div>
+                            <div style="font-weight:600;">${evt.baslik}</div>
+                            ${evt.aciklama ? `<div class="text-muted" style="font-size:0.85rem; margin-top:0.25rem;">${evt.aciklama}</div>` : ''}
+                            <div class="ordering-btns" style="position:absolute; right:0.75rem; top:50%; transform:translateY(-50%);">
+                                <button class="btn btn-sm btn-secondary order-up" data-index="${i}" ${i === 0 ? 'disabled' : ''}>&#9650;</button>
+                                <button class="btn btn-sm btn-secondary order-down" data-index="${i}" ${i === userOrder.length - 1 ? 'disabled' : ''}>&#9660;</button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                <button class="btn btn-primary btn-lg w-full mt-xl" id="check-timeline">Kontrol Et</button>
+            </div>`;
+
+        container.querySelectorAll('.order-up').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.dataset.index);
+                if (idx > 0) { [userOrder[idx], userOrder[idx-1]] = [userOrder[idx-1], userOrder[idx]]; render(); }
+            });
+        });
+        container.querySelectorAll('.order-down').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.dataset.index);
+                if (idx < userOrder.length - 1) { [userOrder[idx], userOrder[idx+1]] = [userOrder[idx+1], userOrder[idx]]; render(); }
+            });
+        });
+
+        container.querySelector('#check-timeline')?.addEventListener('click', () => {
+            let correct = 0;
+            userOrder.forEach((evt, i) => {
+                if (evt.baslik === events[i].baslik && evt.tarih === events[i].tarih) correct++;
+            });
+            const stars = correct === events.length ? 3 : correct >= events.length * 0.7 ? 2 : 1;
+            const xp = correct * 5;
+            store.completeChapter(data.grade, data.unitId, data.chapterId, xp, stars);
+            if (stars >= 2) showConfetti();
+            showXpPopup(xp);
+            playSound(stars === 3 ? 'complete' : 'correct');
+
+            // Show correct order
+            container.innerHTML = `
+                <div class="anim-fade-in-up">
+                    <div class="quiz-result card anim-bounce-in text-center" style="padding:2rem; margin-bottom:1.5rem;">
+                        <span style="font-size:3rem;">${stars === 3 ? '&#127942;' : '&#11088;'}</span>
+                        <h2 class="mt-md">${correct} / ${events.length} Dogru</h2>
+                        <p class="xp-display mt-md" style="font-size:1.3rem;">+${xp} XP</p>
+                    </div>
+                    <div class="card" style="padding:1.5rem;">
+                        <h4 class="mb-md">Dogru Siralama:</h4>
+                        ${events.map((evt, i) => `
+                            <div style="padding:0.5rem 0; border-bottom:1px solid var(--border); display:flex; gap:0.75rem; align-items:baseline;">
+                                <span style="font-weight:700; color:var(--primary);">${i+1}.</span>
+                                <span style="font-weight:600; color:var(--secondary); font-size:0.85rem; min-width:60px;">${evt.tarih || ''}</span>
+                                <span>${evt.baslik}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <button class="btn btn-primary mt-lg" onclick="history.back()" style="width:100%;">Devam Et</button>
+                </div>`;
+        });
+    }
+    render();
+}
+
+// ===== CHARACTER-ROLE ENGINE (E15) =====
+function renderCharacterRoleGame(container, game, data, app) {
+    const chars = game.veri?.karakterler || [];
+    if (chars.length === 0) { renderGenericGame(container, game, data, app); return; }
+
+    const shuffledRoles = [...chars].sort(() => Math.random() - 0.5);
+    let selectedChar = null;
+    let matched = new Set();
+
+    function render() {
+        if (matched.size === chars.length) {
+            const xp = chars.length * 5;
+            store.completeChapter(data.grade, data.unitId, data.chapterId, xp, 3);
+            showConfetti(); showXpPopup(xp); playSound('complete');
+            container.innerHTML = `
+                <div class="quiz-result card anim-bounce-in text-center" style="padding:2rem;">
+                    <span style="font-size:3rem;">&#127942;</span>
+                    <h2 class="mt-md">Tum Eslesmeler Tamam!</h2>
+                    <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
+                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                </div>`;
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="character-role-container anim-fade-in-up">
+                <h3 class="mb-md">&#127917; Karakter-Rol Eslestirme</h3>
+                <p class="text-muted mb-lg">${game.hedef || 'Sol taraftan karakteri sec, sag taraftan rolunu bul.'}</p>
+                <div class="matching-grid">
+                    <div class="matching-col">
+                        <p class="text-muted mb-sm" style="font-size:0.75rem; text-transform:uppercase; letter-spacing:1px;">Karakter</p>
+                        ${chars.map((c, i) => `
+                            <button class="matching-item term-item ${matched.has(i) ? 'matched' : ''} ${selectedChar === i ? 'selected' : ''}"
+                                    data-index="${i}" ${matched.has(i) ? 'disabled' : ''}>
+                                <strong>${c.isim}</strong>
+                                <span style="display:block; font-size:0.8rem; color:var(--text-secondary); margin-top:0.25rem;">${c.ozellik || ''}</span>
+                            </button>
+                        `).join('')}
+                    </div>
+                    <div class="matching-col">
+                        <p class="text-muted mb-sm" style="font-size:0.75rem; text-transform:uppercase; letter-spacing:1px;">Rol</p>
+                        ${shuffledRoles.map((c, i) => `
+                            <button class="matching-item def-item ${matched.has(chars.indexOf(c)) ? 'matched' : ''}"
+                                    data-orig-index="${chars.indexOf(c)}" ${matched.has(chars.indexOf(c)) ? 'disabled' : ''}>
+                                ${c.rol}
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="matching-score mt-md text-muted">${matched.size} / ${chars.length} eslesti</div>
+            </div>`;
+
+        container.querySelectorAll('.term-item').forEach(btn => {
+            btn.addEventListener('click', () => {
+                container.querySelectorAll('.term-item').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                selectedChar = parseInt(btn.dataset.index);
+            });
+        });
+
+        container.querySelectorAll('.def-item').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (selectedChar === null) return;
+                const origIndex = parseInt(btn.dataset.origIndex);
+                if (origIndex === selectedChar) {
+                    matched.add(selectedChar);
+                    playSound('correct');
+                    selectedChar = null;
+                    render();
+                } else {
+                    btn.classList.add('answer-wrong');
+                    playSound('wrong');
+                    setTimeout(() => btn.classList.remove('answer-wrong'), 600);
+                }
+            });
+        });
+    }
+    render();
+}
+
+// ===== MESSAGE HUNT ENGINE (E16) =====
+function renderMessageHuntGame(container, game, data, app) {
+    const themes = game.veri?.temalar || [];
+    const cards = game.veri?.kartlar || [];
+    if (themes.length === 0 || cards.length === 0) { renderGenericGame(container, game, data, app); return; }
+
+    const shuffled = [...cards].sort(() => Math.random() - 0.5);
+    let currentCard = 0;
+    let correct = 0;
+
+    function render() {
+        if (currentCard >= shuffled.length) {
+            const stars = correct === shuffled.length ? 3 : correct >= shuffled.length * 0.7 ? 2 : 1;
+            const xp = correct * 5;
+            store.completeChapter(data.grade, data.unitId, data.chapterId, xp, stars);
+            if (stars >= 2) showConfetti();
+            showXpPopup(xp); playSound('complete');
+            container.innerHTML = `
+                <div class="quiz-result card anim-bounce-in text-center" style="padding:2rem;">
+                    <span style="font-size:3rem;">${stars === 3 ? '&#127942;' : '&#11088;'}</span>
+                    <h2 class="mt-md">${correct} / ${shuffled.length} Dogru</h2>
+                    <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
+                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                </div>`;
+            return;
+        }
+
+        const card = shuffled[currentCard];
+        container.innerHTML = `
+            <div class="message-hunt-container anim-fade-in-up">
+                <h3 class="mb-md">&#128172; Mesaj Avi</h3>
+                <div class="progress-bar mb-md" style="height:4px;">
+                    <div class="fill" style="width:${(currentCard / shuffled.length) * 100}%"></div>
+                </div>
+                <p class="text-muted mb-md">${currentCard + 1} / ${shuffled.length}</p>
+                <div class="card" style="padding:1.5rem; text-align:center; min-height:100px; display:flex; align-items:center; justify-content:center; border:2px solid var(--secondary); background:linear-gradient(135deg, #fffbf0, #fff8e1);">
+                    <p style="font-size:1.1rem; line-height:1.7; font-style:italic;">"${card.metin}"</p>
+                </div>
+                <p class="text-muted mt-lg mb-md text-center">Bu mesajin temasi nedir?</p>
+                <div class="quiz-options">
+                    ${themes.map(theme => `
+                        <button class="quiz-option" data-theme="${theme}">${theme}</button>
+                    `).join('')}
+                </div>
+            </div>`;
+
+        container.querySelectorAll('.quiz-option').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const isCorrect = btn.dataset.theme === card.tema;
+                if (isCorrect) { btn.classList.add('answer-correct'); correct++; playSound('correct'); }
+                else {
+                    btn.classList.add('answer-wrong'); playSound('wrong');
+                    container.querySelectorAll('.quiz-option').forEach(b => {
+                        if (b.dataset.theme === card.tema) b.classList.add('answer-correct');
+                    });
+                }
+                container.querySelectorAll('.quiz-option').forEach(b => b.disabled = true);
+                currentCard++;
+                setTimeout(() => render(), 800);
+            });
+        });
+    }
+    render();
+}
+
+// ===== COMPARISON MATRIX ENGINE (E17) =====
+function renderComparisonGame(container, game, data, app) {
+    const veri = game.veri;
+    if (!veri?.kavram_a || !veri?.kavram_b) { renderGenericGame(container, game, data, app); return; }
+
+    const allStatements = [
+        ...(veri.ortak || []).map(s => ({ text: s, zone: 'ortak' })),
+        ...(veri.farkli_a || []).map(s => ({ text: s, zone: 'farkli_a' })),
+        ...(veri.farkli_b || []).map(s => ({ text: s, zone: 'farkli_b' }))
+    ].sort(() => Math.random() - 0.5);
+
+    let currentIdx = 0;
+    let correct = 0;
+
+    function render() {
+        if (currentIdx >= allStatements.length) {
+            const stars = correct === allStatements.length ? 3 : correct >= allStatements.length * 0.7 ? 2 : 1;
+            const xp = correct * 5;
+            store.completeChapter(data.grade, data.unitId, data.chapterId, xp, stars);
+            if (stars >= 2) showConfetti();
+            showXpPopup(xp); playSound('complete');
+            container.innerHTML = `
+                <div class="quiz-result card anim-bounce-in text-center" style="padding:2rem;">
+                    <span style="font-size:3rem;">${stars === 3 ? '&#127942;' : '&#11088;'}</span>
+                    <h2 class="mt-md">${correct} / ${allStatements.length} Dogru</h2>
+                    <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
+                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                </div>`;
+            return;
+        }
+
+        const item = allStatements[currentIdx];
+        container.innerHTML = `
+            <div class="comparison-container anim-fade-in-up">
+                <h3 class="mb-md">&#128202; Karsilastirma</h3>
+                <div class="progress-bar mb-md" style="height:4px;">
+                    <div class="fill" style="width:${(currentIdx / allStatements.length) * 100}%"></div>
+                </div>
+                <p class="text-muted mb-md">${currentIdx + 1} / ${allStatements.length}</p>
+                <div class="card" style="padding:1.5rem; text-align:center; min-height:80px; display:flex; align-items:center; justify-content:center;">
+                    <p style="font-size:1.05rem; line-height:1.6;">${item.text}</p>
+                </div>
+                <p class="text-muted mt-lg mb-md text-center">Bu ifade kime / neye ait?</p>
+                <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
+                    <button class="btn btn-lg compare-btn" style="flex:1; min-width:100px; padding:1rem; border:2px solid #4A90D9; background:#edf4fc; color:#2c5ea0; font-weight:600;" data-zone="farkli_a">
+                        ${veri.kavram_a}
+                    </button>
+                    <button class="btn btn-lg compare-btn" style="flex:1; min-width:100px; padding:1rem; border:2px solid var(--primary); background:#e8f5e9; color:var(--primary); font-weight:600;" data-zone="ortak">
+                        Ortak
+                    </button>
+                    <button class="btn btn-lg compare-btn" style="flex:1; min-width:100px; padding:1rem; border:2px solid var(--secondary); background:#fff8e1; color:#8B6914; font-weight:600;" data-zone="farkli_b">
+                        ${veri.kavram_b}
+                    </button>
+                </div>
+            </div>`;
+
+        container.querySelectorAll('.compare-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const isCorrect = btn.dataset.zone === item.zone;
+                if (isCorrect) { btn.style.boxShadow = '0 0 0 3px #4ECB71'; correct++; playSound('correct'); }
+                else {
+                    btn.style.boxShadow = '0 0 0 3px #E74C3C'; playSound('wrong');
+                    container.querySelectorAll('.compare-btn').forEach(b => {
+                        if (b.dataset.zone === item.zone) b.style.boxShadow = '0 0 0 3px #4ECB71';
+                    });
+                }
+                container.querySelectorAll('.compare-btn').forEach(b => b.disabled = true);
+                currentIdx++;
+                setTimeout(() => render(), 800);
+            });
+        });
+    }
+    render();
+}
+
+// ===== OPEN-ENDED REFLECTION ENGINE (E20) =====
+function renderOpenEndedGame(container, game, data, app) {
+    const veri = game.veri;
+    if (!veri?.soru) { renderGenericGame(container, game, data, app); return; }
+
+    const hints = veri.yonlendirici_sorular || [];
+    const rubric = veri.rubrik || [];
+    let phase = 'write'; // write -> review
+
+    function renderWrite() {
+        container.innerHTML = `
+            <div class="open-ended-container anim-fade-in-up">
+                <h3 class="mb-md">&#128173; Dusunce Kutusu</h3>
+                <div class="card" style="padding:1.5rem; border-left:4px solid var(--secondary); background:linear-gradient(135deg, #fffbf0, #fff);">
+                    <p style="font-size:1.1rem; line-height:1.7;">${veri.soru}</p>
+                </div>
+                ${hints.length > 0 ? `
+                <div class="card mt-lg" style="padding:1rem; background:#f8f9fa;">
+                    <p style="font-size:0.85rem; font-weight:600; margin-bottom:0.5rem; color:var(--text-secondary);">&#128161; Yonlendirici Sorular:</p>
+                    <ul style="margin:0; padding-left:1.2rem;">
+                        ${hints.map(h => `<li style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:0.4rem;">${h}</li>`).join('')}
+                    </ul>
+                </div>
+                ` : ''}
+                <textarea id="reflection-text" class="mt-lg" placeholder="Dusuncelerini buraya yaz..." style="width:100%; min-height:180px; padding:1rem; border:2px solid var(--border); border-radius:12px; font-size:1rem; line-height:1.7; resize:vertical; font-family:inherit; box-sizing:border-box;"></textarea>
+                <div class="flex justify-between items-center mt-md">
+                    <span class="text-muted" style="font-size:0.8rem;" id="char-count">0 karakter</span>
+                    <button class="btn btn-primary btn-lg" id="submit-reflection" disabled>Gonder</button>
+                </div>
+            </div>`;
+
+        const textarea = container.querySelector('#reflection-text');
+        const submitBtn = container.querySelector('#submit-reflection');
+        const charCount = container.querySelector('#char-count');
+
+        textarea.addEventListener('input', () => {
+            const len = textarea.value.trim().length;
+            charCount.textContent = `${len} karakter`;
+            submitBtn.disabled = len < 20;
+        });
+
+        submitBtn.addEventListener('click', () => {
+            phase = 'review';
+            renderReview(textarea.value.trim());
+        });
+    }
+
+    function renderReview(text) {
+        container.innerHTML = `
+            <div class="open-ended-review anim-fade-in-up">
+                <h3 class="mb-md">&#9745; Oz Degerlendirme</h3>
+                <div class="card" style="padding:1.5rem; background:#f8f9fa;">
+                    <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:0.5rem;">Yazdiklarin:</p>
+                    <p style="line-height:1.7; font-style:italic;">"${text}"</p>
+                </div>
+                ${rubric.length > 0 ? `
+                <div class="card mt-lg" style="padding:1.5rem;">
+                    <p style="font-weight:600; margin-bottom:0.75rem;">Asagidakileri degerlendirin:</p>
+                    ${rubric.map((r, i) => `
+                        <label class="checklist-item card" style="margin-bottom:0.5rem; padding:0.75rem; cursor:pointer;">
+                            <input type="checkbox" class="rubric-check" data-index="${i}">
+                            <span class="checklist-check">&#9744;</span>
+                            <span class="checklist-text">${r}</span>
+                        </label>
+                    `).join('')}
+                </div>
+                ` : ''}
+                <button class="btn btn-primary btn-lg w-full mt-xl" id="finish-reflection">Tamamla</button>
+            </div>`;
+
+        container.querySelectorAll('.rubric-check').forEach(cb => {
+            cb.addEventListener('change', () => {
+                const label = cb.closest('.checklist-item');
+                if (cb.checked) {
+                    label.classList.add('checked');
+                    label.querySelector('.checklist-check').innerHTML = '&#9745;';
+                    playSound('correct');
+                } else {
+                    label.classList.remove('checked');
+                    label.querySelector('.checklist-check').innerHTML = '&#9744;';
+                }
+            });
+        });
+
+        container.querySelector('#finish-reflection')?.addEventListener('click', () => {
+            const checked = container.querySelectorAll('.rubric-check:checked').length;
+            const total = rubric.length || 1;
+            const stars = checked === total ? 3 : checked >= total * 0.5 ? 2 : 1;
+            const xp = 15 + (checked * 5);
+            store.completeChapter(data.grade, data.unitId, data.chapterId, xp, stars);
+            showConfetti(); showXpPopup(xp); playSound('complete');
+            container.innerHTML = `
+                <div class="quiz-result card anim-bounce-in text-center" style="padding:2rem;">
+                    <span style="font-size:3rem;">&#127942;</span>
+                    <h2 class="mt-md">Harika Dusunceler!</h2>
+                    <p class="text-muted mt-sm">Yazma ve dusunme becerilerini gelistirdin.</p>
+                    <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
+                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                </div>`;
+        });
+    }
+
+    renderWrite();
+}
+
+// ===== PERFORMANCE TASK ENGINE (E22) =====
+function renderPerformanceTask(container, game, data, app) {
+    const veri = game.veri;
+    if (!veri?.gorev_basligi) { renderGenericGame(container, game, data, app); return; }
+
+    const steps = veri.adimlar || [];
+    const rubric = veri.rubrik || [];
+    const completedSteps = new Set();
+
+    function render() {
+        container.innerHTML = `
+            <div class="performance-task anim-fade-in-up">
+                <h3 class="mb-sm">&#127941; Performans Gorevi</h3>
+                <div class="card" style="padding:1.5rem; border-left:4px solid var(--secondary); background:linear-gradient(135deg, #fffbf0, #fff);">
+                    <h4 style="color:var(--secondary);">${veri.gorev_basligi}</h4>
+                    ${veri.teslim_formati ? `<p class="text-muted mt-sm" style="font-size:0.85rem;">&#128206; Teslim: ${veri.teslim_formati}</p>` : ''}
+                </div>
+
+                ${steps.length > 0 ? `
+                <div class="card mt-lg" style="padding:1.5rem;">
+                    <h4 class="mb-md">Adimlar</h4>
+                    <div class="performance-steps">
+                        ${steps.map((step, i) => `
+                            <label class="checklist-item card ${completedSteps.has(i) ? 'checked' : ''}" style="margin-bottom:0.5rem; padding:0.75rem; cursor:pointer;">
+                                <input type="checkbox" class="step-check" data-index="${i}" ${completedSteps.has(i) ? 'checked' : ''}>
+                                <span class="checklist-check">${completedSteps.has(i) ? '&#9745;' : '&#9744;'}</span>
+                                <span class="checklist-text">${step}</span>
+                            </label>
+                        `).join('')}
+                    </div>
+                    <div class="progress-bar mt-md" style="height:6px;">
+                        <div class="fill" style="width:${steps.length > 0 ? (completedSteps.size / steps.length) * 100 : 0}%; background:var(--secondary);"></div>
+                    </div>
+                    <p class="text-muted mt-sm" style="font-size:0.85rem;">${completedSteps.size} / ${steps.length} adim tamamlandi</p>
+                </div>
+                ` : ''}
+
+                ${rubric.length > 0 ? `
+                <div class="card mt-lg" style="padding:1.5rem;">
+                    <h4 class="mb-md">&#128203; Degerlendirme Olcutleri</h4>
+                    ${rubric.map(r => `
+                        <div style="padding:0.5rem 0; border-bottom:1px solid var(--border);">
+                            <p style="font-weight:600;">${r.olcut}</p>
+                            <p class="text-muted" style="font-size:0.85rem;">${r.aciklama}</p>
+                        </div>
+                    `).join('')}
+                </div>
+                ` : ''}
+
+                ${completedSteps.size === steps.length && steps.length > 0 ? `
+                    <button class="btn btn-primary btn-lg w-full mt-xl" id="finish-task">Gorevi Tamamla</button>
+                ` : `
+                    <p class="text-muted text-center mt-lg" style="font-size:0.85rem;">Tum adimlari tamamlayin.</p>
+                `}
+            </div>`;
+
+        container.querySelectorAll('.step-check').forEach(cb => {
+            cb.addEventListener('change', () => {
+                const idx = parseInt(cb.dataset.index);
+                if (cb.checked) { completedSteps.add(idx); playSound('correct'); }
+                else completedSteps.delete(idx);
+                render();
+            });
+        });
+
+        container.querySelector('#finish-task')?.addEventListener('click', () => {
+            const xp = 25;
+            store.completeChapter(data.grade, data.unitId, data.chapterId, xp, 3);
+            showConfetti(); showXpPopup(xp); playSound('complete');
+            container.innerHTML = `
+                <div class="quiz-result card anim-bounce-in text-center" style="padding:2rem;">
+                    <span style="font-size:3rem;">&#127942;</span>
+                    <h2 class="mt-md">Performans Gorevi Tamam!</h2>
+                    <p class="text-muted mt-sm">Harika bir is cikardin!</p>
+                    <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
+                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                </div>`;
+        });
+    }
+    render();
 }
 
 // ===== GENERIC GAME (fallback) =====

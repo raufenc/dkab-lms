@@ -1048,6 +1048,57 @@
     object-fit: cover;
 }
 
+/* ===== Timeline ===== */
+.timeline-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-left: 12px;
+}
+
+.timeline-item {
+    margin-left: 12px;
+    transition: all 0.2s;
+}
+
+.timeline-item:hover {
+    box-shadow: var(--shadow-md);
+}
+
+/* ===== Classification ===== */
+.classification-bins button:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+/* ===== Comparison ===== */
+.compare-btn {
+    transition: all 0.2s !important;
+}
+
+.compare-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md) !important;
+}
+
+/* ===== Open-ended ===== */
+.open-ended-container textarea:focus {
+    border-color: var(--primary);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(27, 107, 74, 0.1);
+}
+
+/* ===== Performance Task ===== */
+.performance-steps .checklist-item.checked {
+    background: #e8f8ee;
+    border-color: #4ECB71;
+}
+
+.performance-steps .checklist-item.checked .checklist-text {
+    text-decoration: line-through;
+    color: var(--text-secondary);
+}
+
 /* ===== Responsive ===== */
 @media (max-width: 640px) {
     .welcome-banner { padding: 1.5rem; }
@@ -1056,4 +1107,6 @@
     .grade-select-grid { gap: 0.75rem; }
     .progress-overview { grid-template-columns: repeat(2, 1fr); }
     .badges-grid { grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); }
+    .classification-bins { flex-direction: column; }
+    .timeline-item .ordering-btns { position: static !important; transform: none !important; margin-top: 0.5rem; }
 }
