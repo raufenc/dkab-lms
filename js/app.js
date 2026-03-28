@@ -87,7 +87,8 @@ class App {
             if (parts[2] === 'unite' && parts[3]) {
                 const unitId = `U${parts[3]}`;
                 if (parts[4] === 'bolum' && parts[5]) {
-                    const chapterId = `${unitId}_B${parts[5]}`;
+                    // bolum_id comes directly from URL (e.g. U1_B1, U1_GIRIS, U1_DEG, U1_PERF)
+                    const chapterId = parts[5];
                     return { page: 'chapter', grade, unitId, chapterId };
                 }
                 return { page: 'unit', grade, unitId };

@@ -141,7 +141,7 @@ function renderChapterItem(grade, unitId, chapter, index, color) {
     const isLocked = false; // For now, all unlocked
 
     return `
-        <a href="#/sinif/${grade}/unite/${unitId.replace('U', '')}/bolum/${chapter.bolum_id.split('_B')[1]}"
+        <a href="#/sinif/${grade}/unite/${unitId.replace('U', '')}/bolum/${chapter.bolum_id}"
            class="chapter-item anim-fade-in-up ${isCompleted ? 'completed' : ''} ${isLocked ? 'locked' : ''}">
             <div class="chapter-item-icon" style="background: ${isCompleted ? color.bg : '#f5f5f5'}; color: ${isCompleted ? color.border : '#999'};">
                 ${isCompleted ? '&#10004;' : icon}
