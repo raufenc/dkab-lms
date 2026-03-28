@@ -15,7 +15,8 @@ const DEFAULT_STATE = {
         completedChapters: 0,
         totalQuizzes: 0,
         correctAnswers: 0,
-        totalAnswers: 0
+        totalAnswers: 0,
+        enginesUsed: []
     }
 };
 
@@ -52,17 +53,16 @@ class Store {
             const raw = localStorage.getItem(STORAGE_KEY);
             if (raw) {
                 const parsed = JSON.parse(raw);
-                // Merge with defaults for any missing keys
                 return {
-                    ...DEFAULT_STATE,
+                    ...JSON.parse(JSON.stringify(DEFAULT_STATE)),
                     ...parsed,
-                    stats: { ...DEFAULT_STATE.stats, ...(parsed.stats || {}) }
+                    stats: { ...JSON.parse(JSON.stringify(DEFAULT_STATE.stats)), ...(parsed.stats || {}) }
                 };
             }
         } catch (e) {
             console.warn('Store load error:', e);
         }
-        return { ...DEFAULT_STATE };
+        return JSON.parse(JSON.stringify(DEFAULT_STATE));
     }
 
     _save() {
@@ -85,17 +85,9 @@ class Store {
         };
     }
 
-    get state() {
-        return this._state;
-    }
-
-    get user() {
-        return this._state.user;
-    }
-
-    get stats() {
-        return this._state.stats;
-    }
+    get state() { return this._state; }
+    get user() { return this._state.user; }
+    get stats() { return this._state.stats; }
 
     // ===== User =====
     createUser(name, grade, avatar) {
@@ -161,10 +153,15 @@ class Store {
         const prev = this._state.progress[grade][unitId][chapterId];
         const bestStars = Math.max(stars || 0, prev?.stars || 0);
         const isNew = !prev?.completed;
+        const prevXp = prev?.xp || 0;
+        const newXp = xp || 0;
+
+        // Only award XP if this is new or score improved
+        const xpToAward = isNew ? newXp : Math.max(0, newXp - prevXp);
 
         this._state.progress[grade][unitId][chapterId] = {
             completed: true,
-            xp: (prev?.xp || 0) + (xp || 0),
+            xp: Math.max(prevXp, newXp),
             stars: bestStars,
             completedAt: new Date().toISOString()
         };
@@ -173,26 +170,41 @@ class Store {
             this._state.stats.completedChapters++;
         }
 
-        this.addXp(xp || 0);
+        if (xpToAward > 0) {
+            this._state.stats.totalXp += xpToAward;
+            this._state.stats.level = Math.min(
+                MAX_LEVEL,
+                Math.floor(this._state.stats.totalXp / XP_PER_LEVEL) + 1
+            );
+        }
+
         this._checkBadges();
         this._save();
 
-        return { isNew, xpGained: xp, stars: bestStars };
+        return { isNew, xpGained: xpToAward, stars: bestStars };
+    }
+
+    // Track which game engine was used
+    trackEngine(engineId) {
+        if (!this._state.stats.enginesUsed) this._state.stats.enginesUsed = [];
+        if (!this._state.stats.enginesUsed.includes(engineId)) {
+            this._state.stats.enginesUsed.push(engineId);
+            this._checkBadges();
+            this._save();
+        }
     }
 
     // ===== XP & Level =====
     addXp(amount) {
         if (amount <= 0) return;
-        const prevLevel = this._state.stats.level;
         this._state.stats.totalXp += amount;
         this._state.stats.level = Math.min(
             MAX_LEVEL,
             Math.floor(this._state.stats.totalXp / XP_PER_LEVEL) + 1
         );
-
-        const leveledUp = this._state.stats.level > prevLevel;
+        this._checkBadges();
         this._save();
-        return { leveledUp, newLevel: this._state.stats.level };
+        return { newLevel: this._state.stats.level };
     }
 
     getXpForCurrentLevel() {
@@ -208,12 +220,12 @@ class Store {
         const today = new Date().toISOString().split('T')[0];
         const last = this._state.stats.lastActiveDate;
 
-        if (last === today) return; // Already updated today
+        if (last === today) return;
 
         if (last) {
-            const lastDate = new Date(last);
-            const todayDate = new Date(today);
-            const diffDays = Math.round((todayDate - lastDate) / (1000 * 60 * 60 * 24));
+            const lastDate = new Date(last + 'T00:00:00');
+            const todayDate = new Date(today + 'T00:00:00');
+            const diffDays = Math.floor((todayDate - lastDate) / (1000 * 60 * 60 * 24));
 
             if (diffDays === 1) {
                 this._state.stats.streak++;
@@ -254,8 +266,7 @@ class Store {
     awardBadge(badgeId) {
         if (!this._state.stats.badges.includes(badgeId)) {
             this._state.stats.badges.push(badgeId);
-            this._save();
-            return true; // New badge
+            return true;
         }
         return false;
     }
@@ -279,11 +290,28 @@ class Store {
 
         // Completion badges
         if (s.completedChapters >= 1) this.awardBadge('first_lesson');
+
+        // Unit completion badges
+        const progress = this._state.progress;
+        let completedUnits = 0;
+        Object.values(progress).forEach(grade => {
+            Object.values(grade).forEach(unit => {
+                const chapters = Object.values(unit);
+                if (chapters.length > 0 && chapters.every(c => c.completed)) {
+                    completedUnits++;
+                }
+            });
+        });
+        if (completedUnits >= 1) this.awardBadge('unit_complete');
+        if (completedUnits >= 5) this.awardBadge('five_units');
+
+        // Game variety badge
+        if (s.enginesUsed && s.enginesUsed.length >= 10) this.awardBadge('game_variety');
     }
 
     // ===== Reset =====
     resetAll() {
-        this._state = { ...DEFAULT_STATE };
+        this._state = JSON.parse(JSON.stringify(DEFAULT_STATE));
         localStorage.removeItem(STORAGE_KEY);
         this._notify();
     }

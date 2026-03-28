@@ -1,6 +1,6 @@
 // ===== DKAB Akademi - Sozluk =====
 
-import { getGradeInfo } from '../data-loader.js?v=2';
+import { getGradeInfo } from '../data-loader.js?v=3';
 
 export function renderGlossary(el, grade, glossary, app) {
     const gradeInfo = getGradeInfo(grade);
@@ -45,7 +45,7 @@ export function renderGlossary(el, grade, glossary, app) {
                     <div class="glossary-filters mt-md flex gap-sm flex-wrap">
                         ${units.map(u => `
                             <button class="badge ${u === activeUnit ? 'badge-success' : ''}" data-unit="${u}" style="cursor:pointer;">
-                                ${u === 'ALL' ? 'Tumunu Goster' : u === 'GENEL' ? 'Genel' : u + '. Unite'}
+                                ${u === 'ALL' ? 'Tumunu Goster' : u === 'GENEL' ? 'Genel' : u.replace('U','') + '. Unite'}
                             </button>
                         `).join('')}
                     </div>

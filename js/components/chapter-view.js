@@ -1,8 +1,13 @@
 // ===== DKAB Akademi - Bolum Gorunumu =====
 
-import { store } from '../store.js?v=2';
-import { getGradeInfo } from '../data-loader.js?v=2';
-import { showConfetti, showXpPopup, playSound } from './effects.js?v=2';
+import { store } from '../store.js?v=3';
+import { getGradeInfo } from '../data-loader.js?v=3';
+import { showConfetti, showXpPopup, playSound } from './effects.js?v=3';
+
+// Helper: navigate back to chapter view
+function backToChapter(data) {
+    window.location.hash = '#/sinif/' + data.grade + '/unite/' + data.unitId.replace('U','') + '/bolum/' + data.chapterId;
+}
 
 export function renderChapterView(el, data, app) {
     const { grade, unitId, chapterId, chapter, unit, games, questions, conceptCard, prayers, coverage, visuals } = data;
@@ -13,7 +18,7 @@ export function renderChapterView(el, data, app) {
     if (conceptCard) tabs.push({ id: 'lesson', label: 'Ders', icon: '&#128218;' });
     if (games.length > 0) tabs.push({ id: 'games', label: 'Oyunlar', icon: '&#127922;' });
     if (questions.length > 0) tabs.push({ id: 'quiz', label: 'Quiz', icon: '&#127919;' });
-    if (prayers.length > 0 && (chapter.tur === 'dua' || chapter.tur === 'sure')) {
+    if (prayers && prayers.length > 0) {
         tabs.push({ id: 'dua', label: 'Dua / Sure', icon: '&#128588;' });
     }
 
@@ -26,7 +31,7 @@ export function renderChapterView(el, data, app) {
             <!-- Chapter Header -->
             <div class="chapter-header anim-fade-in-up">
                 <div class="chapter-header-top">
-                    <button class="btn-icon" onclick="history.back()" style="color:var(--text-secondary);">
+                    <button class="btn-icon" onclick="window.location.hash='#/'" style="color:var(--text-secondary);">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
                     </button>
                     <div class="chapter-header-info">
@@ -120,7 +125,7 @@ function renderLesson(data) {
             <!-- Summary Card -->
             <div class="card" style="padding: 1.5rem;">
                 <h3 style="margin-bottom: 0.75rem;">&#128218; Konu Ozeti</h3>
-                <p style="line-height: 1.8; color: var(--text-secondary);">${conceptCard.ozet}</p>
+                <p style="line-height: 1.8; color: var(--text-secondary);">${conceptCard.ozet || ""}</p>
             </div>
 
             <!-- Key Terms -->
@@ -262,7 +267,21 @@ function launchGame(container, game, data, app) {
 
 // ===== FLASHCARD ENGINE (E02, E23) =====
 function renderFlashcardGame(container, game, data, app) {
-    const items = game.veri?.terimler || game.veri?.kartlar || game.veri?.satirlar || game.veri?.ciftler || [];
+    store.trackEngine(game.motor_id);
+    // Handle multiple data formats: kartlar (objects), ciftler, or terimler (could be strings or objects)
+    let items = game.veri?.kartlar || game.veri?.ciftler || game.veri?.satirlar || [];
+    // If terimler exists and kartlar doesn't, try to use it
+    if (items.length === 0 && game.veri?.terimler) {
+        const t = game.veri.terimler;
+        if (typeof t[0] === 'string' && game.veri?.tanimlar) {
+            // Parallel arrays: terimler[] + tanimlar[]
+            items = t.map((terim, i) => ({ terim, tanim: game.veri.tanimlar[i] || '' }));
+        } else if (typeof t[0] === 'object') {
+            items = t;
+        } else {
+            items = t.map(terim => ({ terim, tanim: '' }));
+        }
+    }
     if (items.length === 0) {
         container.innerHTML = '<div class="card text-center" style="padding:2rem;"><p class="text-muted">Kart verisi bulunamadi.</p></div>';
         return;
@@ -313,10 +332,17 @@ function renderFlashcardGame(container, game, data, app) {
             } else {
                 // Complete
                 const xp = 15;
-                store.completeChapter(data.grade, data.unitId, data.chapterId, xp, 2);
-                showXpPopup(xp);
+                const result = store.completeChapter(data.grade, data.unitId, data.chapterId, xp, 2);
+                if (result.xpGained > 0) showXpPopup(result.xpGained);
                 playSound('complete');
-                renderGames({ games: data.games });
+                container.innerHTML = `
+                    <div class="quiz-result card anim-bounce-in text-center" style="padding:2rem;">
+                        <span style="font-size:3rem;">&#128218;</span>
+                        <h2 class="mt-md">Kartlar Tamamlandi!</h2>
+                        <p class="text-muted mt-sm">${items.length} kart incelendi</p>
+                        ${result.xpGained > 0 ? `<p class="xp-display mt-lg" style="font-size:1.3rem;">+${result.xpGained} XP</p>` : ''}
+                        <button class="btn btn-primary mt-lg" onclick="window.location.hash='#/sinif/${data.grade}/unite/${data.unitId.replace('U','')}/bolum/${data.chapterId}'">Devam Et</button>
+                    </div>`;
             }
         });
     }
@@ -326,9 +352,14 @@ function renderFlashcardGame(container, game, data, app) {
 
 // ===== MATCHING ENGINE (E03) =====
 function renderMatchingGame(container, game, data, app) {
-    const pairs = game.veri?.terimler?.map((t, i) => ({
-        term: t,
-        def: game.veri?.tanimlar?.[i] || ''
+    store.trackEngine('E03');
+    // Support both formats: ciftler[{terim,tanim}] and parallel terimler[]+tanimlar[]
+    const pairs = game.veri?.ciftler?.map(c => ({
+        term: c.terim || c.on || c.baslik || '',
+        def: c.tanim || c.arka || c.aciklama || ''
+    })) || game.veri?.terimler?.map((t, i) => ({
+        term: typeof t === 'string' ? t : (t.terim || t.baslik || ''),
+        def: game.veri?.tanimlar?.[i] || (typeof t === 'object' ? (t.tanim || t.aciklama || '') : '')
     })) || [];
 
     if (pairs.length === 0) {
@@ -408,7 +439,8 @@ function renderMatchingGame(container, game, data, app) {
 
 // ===== TRUE/FALSE ENGINE (E06) =====
 function renderTrueFalseGame(container, game, data, app) {
-    const items = game.veri?.sorular || game.veri?.ifadeler || [];
+    store.trackEngine('E06');
+    const items = game.veri?.sorular || game.veri?.ifadeler || game.veri?.soru_seti || [];
     if (items.length === 0) {
         container.innerHTML = '<div class="card text-center" style="padding:2rem;"><p class="text-muted">Soru verisi bulunamadi.</p></div>';
         return;
@@ -435,14 +467,14 @@ function renderTrueFalseGame(container, game, data, app) {
                         ${'&#11088;'.repeat(stars)}${'&#9734;'.repeat(3 - stars)}
                     </div>
                     <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
-                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                    <button class="btn btn-primary mt-lg" onclick="window.location.hash='#/'">Devam Et</button>
                 </div>`;
             return;
         }
 
         const item = items[current];
         const statement = item.ifade || item.soru || item.metin || '';
-        const answer = item.dogru_cevap || item.cevap;
+        const answer = item.dogru_mu !== undefined ? item.dogru_mu : (item.dogru_cevap !== undefined ? item.dogru_cevap : item.cevap);
         const isTrue = answer === true || answer === 'Dogru' || answer === 'dogru' || answer === 'D';
 
         container.innerHTML = `
@@ -484,6 +516,7 @@ function renderTrueFalseGame(container, game, data, app) {
 
 // ===== MINI QUIZ (E01, E19) =====
 function renderMiniQuiz(container, game, data, app) {
+    store.trackEngine(game.motor_id || 'E19');
     const items = game.veri?.sorular || game.veri?.soru_seti || [];
     if (items.length === 0) {
         container.innerHTML = '<div class="card text-center" style="padding:2rem;"><p class="text-muted">Quiz verisi bulunamadi.</p></div>';
@@ -508,7 +541,7 @@ function renderMiniQuiz(container, game, data, app) {
                     <h2 class="mt-md">${correct} / ${items.length} Dogru</h2>
                     <div class="stars mt-md" style="font-size:2rem; justify-content:center;">${'&#11088;'.repeat(stars)}${'&#9734;'.repeat(3 - stars)}</div>
                     <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
-                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                    <button class="btn btn-primary mt-lg" onclick="window.location.hash='#/'">Devam Et</button>
                 </div>`;
             return;
         }
@@ -567,6 +600,7 @@ function renderMiniQuiz(container, game, data, app) {
 
 // ===== ORDERING ENGINE (E11) =====
 function renderOrderingGame(container, game, data, app) {
+    store.trackEngine('E11');
     const steps = game.veri?.adimlar || [];
     if (steps.length === 0) {
         renderGenericGame(container, game, data, app);
@@ -636,7 +670,7 @@ function renderOrderingGame(container, game, data, app) {
                     <span style="font-size:3rem;">${stars === 3 ? '&#127942;' : '&#11088;'}</span>
                     <h2 class="mt-md">${correct} / ${steps.length} Dogru Siralama</h2>
                     <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
-                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                    <button class="btn btn-primary mt-lg" onclick="window.location.hash='#/'">Devam Et</button>
                 </div>`;
         });
     }
@@ -646,6 +680,7 @@ function renderOrderingGame(container, game, data, app) {
 
 // ===== CHECKLIST ENGINE (E21) =====
 function renderChecklistGame(container, game, data, app) {
+    store.trackEngine('E21');
     const items = game.veri?.maddeler || [];
     if (items.length === 0) {
         renderGenericGame(container, game, data, app);
@@ -698,7 +733,7 @@ function renderChecklistGame(container, game, data, app) {
                     <span style="font-size:3rem;">&#127942;</span>
                     <h2 class="mt-md">Oz Degerlendirme Tamam!</h2>
                     <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
-                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                    <button class="btn btn-primary mt-lg" onclick="window.location.hash='#/'">Devam Et</button>
                 </div>`;
         });
     }
@@ -719,6 +754,7 @@ function renderFillBlankGame(container, game, data, app) {
 
 // ===== CLASSIFICATION ENGINE (E18) =====
 function renderClassificationGame(container, game, data, app) {
+    store.trackEngine('E18');
     const categories = game.veri?.kategoriler || [];
     const items = game.veri?.ogeler || [];
     if (categories.length === 0 || items.length === 0) { renderGenericGame(container, game, data, app); return; }
@@ -743,7 +779,7 @@ function renderClassificationGame(container, game, data, app) {
                     <h2 class="mt-md">${correct} / ${shuffled.length} Dogru</h2>
                     <div class="stars mt-md" style="font-size:2rem; justify-content:center;">${'&#11088;'.repeat(stars)}${'&#9734;'.repeat(3 - stars)}</div>
                     <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
-                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                    <button class="btn btn-primary mt-lg" onclick="window.location.hash='#/'">Devam Et</button>
                 </div>`;
             return;
         }
@@ -757,7 +793,7 @@ function renderClassificationGame(container, game, data, app) {
                 </div>
                 <p class="text-muted mb-md">${currentItem + 1} / ${shuffled.length}</p>
                 <div class="card" style="padding:1.5rem; text-align:center; min-height:80px; display:flex; align-items:center; justify-content:center; border:2px solid var(--primary); background:var(--bg-main);">
-                    <p style="font-size:1.15rem; font-weight:600;">${item.metin}</p>
+                    <p style="font-size:1.15rem; font-weight:600;">${item.metin || item.oge || item.baslik || ""}</p>
                 </div>
                 <p class="text-muted mt-lg mb-md text-center">Bu hangi kategoriye ait?</p>
                 <div class="classification-bins" style="display:flex; gap:1rem; flex-wrap:wrap;">
@@ -794,6 +830,7 @@ function renderClassificationGame(container, game, data, app) {
 
 // ===== CAUSE-EFFECT ENGINE (E13) =====
 function renderCauseEffectGame(container, game, data, app) {
+    store.trackEngine('E13');
     const cards = game.veri?.kartlar || [];
     if (cards.length === 0) { renderGenericGame(container, game, data, app); return; }
 
@@ -849,7 +886,7 @@ function renderCauseEffectGame(container, game, data, app) {
                     <span style="font-size:3rem;">${stars === 3 ? '&#127942;' : '&#11088;'}</span>
                     <h2 class="mt-md">${correct} / ${cards.length} Dogru Siralama</h2>
                     <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
-                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                    <button class="btn btn-primary mt-lg" onclick="window.location.hash='#/'">Devam Et</button>
                 </div>`;
         });
     }
@@ -858,6 +895,7 @@ function renderCauseEffectGame(container, game, data, app) {
 
 // ===== TIMELINE ENGINE (E14) =====
 function renderTimelineGame(container, game, data, app) {
+    store.trackEngine('E14');
     const events = game.veri?.olaylar || [];
     if (events.length === 0) { renderGenericGame(container, game, data, app); return; }
 
@@ -929,7 +967,7 @@ function renderTimelineGame(container, game, data, app) {
                             </div>
                         `).join('')}
                     </div>
-                    <button class="btn btn-primary mt-lg" onclick="history.back()" style="width:100%;">Devam Et</button>
+                    <button class="btn btn-primary mt-lg" onclick="window.location.hash='#/'" style="width:100%;">Devam Et</button>
                 </div>`;
         });
     }
@@ -938,6 +976,7 @@ function renderTimelineGame(container, game, data, app) {
 
 // ===== CHARACTER-ROLE ENGINE (E15) =====
 function renderCharacterRoleGame(container, game, data, app) {
+    store.trackEngine('E15');
     const chars = game.veri?.karakterler || [];
     if (chars.length === 0) { renderGenericGame(container, game, data, app); return; }
 
@@ -955,7 +994,7 @@ function renderCharacterRoleGame(container, game, data, app) {
                     <span style="font-size:3rem;">&#127942;</span>
                     <h2 class="mt-md">Tum Eslesmeler Tamam!</h2>
                     <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
-                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                    <button class="btn btn-primary mt-lg" onclick="window.location.hash='#/'">Devam Et</button>
                 </div>`;
             return;
         }
@@ -1018,6 +1057,7 @@ function renderCharacterRoleGame(container, game, data, app) {
 
 // ===== MESSAGE HUNT ENGINE (E16) =====
 function renderMessageHuntGame(container, game, data, app) {
+    store.trackEngine('E16');
     const themes = game.veri?.temalar || [];
     const cards = game.veri?.kartlar || [];
     if (themes.length === 0 || cards.length === 0) { renderGenericGame(container, game, data, app); return; }
@@ -1038,7 +1078,7 @@ function renderMessageHuntGame(container, game, data, app) {
                     <span style="font-size:3rem;">${stars === 3 ? '&#127942;' : '&#11088;'}</span>
                     <h2 class="mt-md">${correct} / ${shuffled.length} Dogru</h2>
                     <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
-                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                    <button class="btn btn-primary mt-lg" onclick="window.location.hash='#/'">Devam Et</button>
                 </div>`;
             return;
         }
@@ -1083,6 +1123,7 @@ function renderMessageHuntGame(container, game, data, app) {
 
 // ===== COMPARISON MATRIX ENGINE (E17) =====
 function renderComparisonGame(container, game, data, app) {
+    store.trackEngine('E17');
     const veri = game.veri;
     if (!veri?.kavram_a || !veri?.kavram_b) { renderGenericGame(container, game, data, app); return; }
 
@@ -1107,7 +1148,7 @@ function renderComparisonGame(container, game, data, app) {
                     <span style="font-size:3rem;">${stars === 3 ? '&#127942;' : '&#11088;'}</span>
                     <h2 class="mt-md">${correct} / ${allStatements.length} Dogru</h2>
                     <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
-                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                    <button class="btn btn-primary mt-lg" onclick="window.location.hash='#/'">Devam Et</button>
                 </div>`;
             return;
         }
@@ -1158,6 +1199,7 @@ function renderComparisonGame(container, game, data, app) {
 
 // ===== OPEN-ENDED REFLECTION ENGINE (E20) =====
 function renderOpenEndedGame(container, game, data, app) {
+    store.trackEngine('E20');
     const veri = game.veri;
     if (!veri?.soru) { renderGenericGame(container, game, data, app); return; }
 
@@ -1253,7 +1295,7 @@ function renderOpenEndedGame(container, game, data, app) {
                     <h2 class="mt-md">Harika Dusunceler!</h2>
                     <p class="text-muted mt-sm">Yazma ve dusunme becerilerini gelistirdin.</p>
                     <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
-                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                    <button class="btn btn-primary mt-lg" onclick="window.location.hash='#/'">Devam Et</button>
                 </div>`;
         });
     }
@@ -1263,6 +1305,7 @@ function renderOpenEndedGame(container, game, data, app) {
 
 // ===== PERFORMANCE TASK ENGINE (E22) =====
 function renderPerformanceTask(container, game, data, app) {
+    store.trackEngine('E22');
     const veri = game.veri;
     if (!veri?.gorev_basligi) { renderGenericGame(container, game, data, app); return; }
 
@@ -1336,7 +1379,7 @@ function renderPerformanceTask(container, game, data, app) {
                     <h2 class="mt-md">Performans Gorevi Tamam!</h2>
                     <p class="text-muted mt-sm">Harika bir is cikardin!</p>
                     <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
-                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                    <button class="btn btn-primary mt-lg" onclick="window.location.hash='#/'">Devam Et</button>
                 </div>`;
         });
     }
@@ -1352,7 +1395,7 @@ function renderGenericGame(container, game, data, app) {
             <p class="text-muted mt-sm">${game.hedef || ''}</p>
             <p class="text-muted mt-sm" style="font-size:0.8rem;">Motor: ${game.motor_adi} (${game.motor_id})</p>
             <p class="mt-lg text-muted">Bu oyun motoru yakinda aktif olacak!</p>
-            <button class="btn btn-primary mt-lg" onclick="history.back()">Geri Don</button>
+            <button class="btn btn-primary mt-lg" onclick="window.location.hash='#/'">Geri Don</button>
         </div>`;
 }
 
@@ -1400,7 +1443,7 @@ function initQuiz(el, data, app) {
                         </div>
                         <p class="xp-display mt-xl" style="font-size:1.5rem;">+${xp} XP</p>
                         <div class="flex gap-md justify-center mt-xl">
-                            <button class="btn btn-secondary" onclick="history.back()">Geri Don</button>
+                            <button class="btn btn-secondary" onclick="window.location.hash='#/'">Geri Don</button>
                             <button class="btn btn-primary" id="retry-quiz">Tekrar Dene</button>
                         </div>
                     </div>`;

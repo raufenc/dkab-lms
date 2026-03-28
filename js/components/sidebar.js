@@ -1,7 +1,7 @@
 // ===== DKAB Akademi - Sidebar Bileseni =====
 
-import { store } from '../store.js?v=2';
-import { getAllGrades, getGradeInfo } from '../data-loader.js?v=2';
+import { store } from '../store.js?v=3';
+import { getAllGrades, getGradeInfo } from '../data-loader.js?v=3';
 
 export function renderSidebar(el, app) {
     const user = store.user;
@@ -29,7 +29,7 @@ export function renderSidebar(el, app) {
 
         <div class="sidebar-section">
             <div class="sidebar-nav">
-                <a href="#/" class="sidebar-link ${!app.currentRoute?.grade ? 'active' : ''}">
+                <a href="#/" class="sidebar-link ${app.currentRoute?.page === 'home' ? 'active' : ''}">
                     <span class="sidebar-link-icon">&#127968;</span>
                     Ana Sayfa
                 </a>

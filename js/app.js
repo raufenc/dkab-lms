@@ -1,16 +1,16 @@
 // ===== DKAB Akademi - Ana Uygulama + Router =====
 
-import { store } from './store.js?v=2';
-import { getGradeInfo, loadGradeEssentials, loadChapterContent, loadGlossary, loadData } from './data-loader.js?v=2';
-import { renderHeader } from './components/header.js?v=2';
-import { renderSidebar } from './components/sidebar.js?v=2';
-import { renderHome } from './components/home.js?v=2';
-import { renderClassSelector } from './components/class-selector.js?v=2';
-import { renderUnitList } from './components/unit-list.js?v=2';
-import { renderChapterView } from './components/chapter-view.js?v=2';
-import { renderGlossary } from './components/glossary.js?v=2';
-import { renderProgressDashboard } from './components/progress-dashboard.js?v=2';
-import { showConfetti, showXpPopup } from './components/effects.js?v=2';
+import { store } from './store.js?v=3';
+import { getGradeInfo, loadGradeEssentials, loadChapterContent, loadGlossary, loadData } from './data-loader.js?v=3';
+import { renderHeader } from './components/header.js?v=3';
+import { renderSidebar } from './components/sidebar.js?v=3';
+import { renderHome } from './components/home.js?v=3';
+import { renderClassSelector } from './components/class-selector.js?v=3';
+import { renderUnitList } from './components/unit-list.js?v=3';
+import { renderChapterView } from './components/chapter-view.js?v=3';
+import { renderGlossary } from './components/glossary.js?v=3';
+import { renderProgressDashboard } from './components/progress-dashboard.js?v=3';
+import { showConfetti, showXpPopup } from './components/effects.js?v=3';
 
 class App {
     constructor() {
@@ -107,6 +107,9 @@ class App {
     }
 
     async _renderRoute(route) {
+        // Scroll to top on page navigation
+        window.scrollTo(0, 0);
+
         // Page transition
         this.mainEl.classList.remove('page-enter');
 
@@ -172,10 +175,7 @@ class App {
             return;
         }
 
-        // Set grade if user exists
-        if (store.user) {
-            store.setGrade(grade);
-        }
+        // Don't change user's registered grade when just browsing
 
         renderUnitList(this.mainEl, grade, data, this);
     }
