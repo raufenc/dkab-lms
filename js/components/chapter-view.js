@@ -1,8 +1,8 @@
 // ===== DKAB Akademi - Bolum Gorunumu =====
 
-import { store } from '../store.js?v=3';
-import { getGradeInfo } from '../data-loader.js?v=3';
-import { showConfetti, showXpPopup, playSound } from './effects.js?v=3';
+import { store } from '../store.js?v=4';
+import { getGradeInfo } from '../data-loader.js?v=4';
+import { showConfetti, showXpPopup, playSound } from './effects.js?v=4';
 
 // Helper: navigate back to chapter view
 function backToChapter(data) {
@@ -73,6 +73,9 @@ export function renderChapterView(el, data, app) {
             if (btn.dataset.tab === 'games') {
                 initGames(el, data, app);
             }
+            if (btn.dataset.tab === 'dua') {
+                initAudioPlayers(el);
+            }
         });
     });
 
@@ -82,6 +85,9 @@ export function renderChapterView(el, data, app) {
     }
     if (tabs[0]?.id === 'games') {
         initGames(el, data, app);
+    }
+    if (tabs[0]?.id === 'dua') {
+        initAudioPlayers(el);
     }
 }
 
@@ -1517,6 +1523,207 @@ function initQuiz(el, data, app) {
 }
 
 // ===== DUA/SURE TAB =====
+
+// Audio file mapping for prayers
+const PRAYER_AUDIO_MAP = {
+    // Sureler
+    'fatiha': 'sureler/fatiha.mp3',
+    'ihlas': 'sureler/ihlas.mp3',
+    'ihlâs': 'sureler/ihlas.mp3',
+    'kevser': 'sureler/kevser.mp3',
+    'kureyş': 'sureler/kureys.mp3',
+    'kureys': 'sureler/kureys.mp3',
+    'felak': 'sureler/felak.mp3',
+    'felâk': 'sureler/felak.mp3',
+    'fil': 'sureler/fil.mp3',
+    'nas': 'sureler/nas.mp3',
+    'nâs': 'sureler/nas.mp3',
+    'kafirun': 'sureler/kafirun.mp3',
+    'kâfirûn': 'sureler/kafirun.mp3',
+    'maun': 'sureler/maun.mp3',
+    'mâûn': 'sureler/maun.mp3',
+    'asr': 'sureler/asr.mp3',
+    // Ayetler
+    'ayetü\'l-kürsi': 'ayetler/bakara_255.mp3',
+    'ayetül-kürsi': 'ayetler/bakara_255.mp3',
+    'enam 162': 'ayetler/enam_162.mp3',
+    'en\'am 162': 'ayetler/enam_162.mp3',
+    'bakara 128': 'ayetler/bakara_128.mp3',
+    'bakara 201': 'ayetler/bakara_201.mp3',
+    'bakara 208': 'ayetler/bakara_208.mp3',
+    'bakara 153': 'ayetler/bakara_153-157.mp3',
+    'ibrahim 40': 'ayetler/ibrahim_40-41.mp3',
+    'ahzab 45': 'ayetler/ahzab_45-46.mp3',
+    'ahzâb 45': 'ayetler/ahzab_45-46.mp3',
+    'nahl 43': 'ayetler/nahl_43-44.mp3',
+    'nahl 90': 'ayetler/nahl_90.mp3',
+    'isra 36': 'ayetler/isra_36.mp3',
+    'isrâ 36': 'ayetler/isra_36.mp3',
+    'mülk 23': 'ayetler/mulk_23.mp3',
+    'hasr 22': 'ayetler/hasr_22-24.mp3',
+    'haşr 22': 'ayetler/hasr_22-24.mp3',
+    'nisa 58': 'ayetler/nisa_58.mp3',
+    'nisâ 58': 'ayetler/nisa_58.mp3',
+    'nisa 69': 'ayetler/nisa_69.mp3',
+    'nisâ 69': 'ayetler/nisa_69.mp3',
+    'rum 41': 'ayetler/rum_41.mp3',
+    'rûm 41': 'ayetler/rum_41.mp3',
+    'hucurat 13': 'ayetler/hucurat_13.mp3',
+    'hucurât 13': 'ayetler/hucurat_13.mp3',
+    'hucurat 10': 'ayetler/hucurat_10.mp3',
+    'hucurât 10': 'ayetler/hucurat_10.mp3',
+    'kehf 107': 'ayetler/kehf_107-110.mp3',
+    'enam 59': 'ayetler/enam_59.mp3',
+    'en\'am 59': 'ayetler/enam_59.mp3',
+    'lokman 27': 'ayetler/lokman_27.mp3',
+    'lokmân 27': 'ayetler/lokman_27.mp3',
+    'fatir 27': 'ayetler/fatir_27-28.mp3',
+    'fâtır 27': 'ayetler/fatir_27-28.mp3',
+    'enam 151': 'ayetler/enam_151-152.mp3',
+    'en\'am 151': 'ayetler/enam_151-152.mp3',
+};
+
+function normalizeTR(str) {
+    return str.toLowerCase()
+        .replace(/['']/g, "'")
+        .replace(/İ/gi, 'i').replace(/ı/g, 'i')
+        .replace(/[âàáä]/g, 'a').replace(/[ûùúü]/g, 'u').replace(/[ôòóö]/g, 'o')
+        .replace(/[êèéë]/g, 'e').replace(/[îìíï]/g, 'i')
+        .replace(/ş/g, 's').replace(/ç/g, 'c').replace(/ğ/g, 'g')
+        .replace(/\u0307/g, '');
+}
+
+function getAudioForPrayer(baslik) {
+    const normalized = normalizeTR(baslik);
+    // Sort keys by length descending (most specific first) to avoid false matches
+    const sorted = Object.entries(PRAYER_AUDIO_MAP).sort((a, b) => b[0].length - a[0].length);
+    for (const [key, val] of sorted) {
+        const keyWords = normalizeTR(key).split(/[\s-]+/);
+        if (keyWords.every(w => normalized.includes(w))) return val;
+    }
+    return null;
+}
+
+// Active audio tracker
+let _activeAudio = null;
+
+function initAudioPlayers(container) {
+    // Toggle play button - show/hide player
+    container.querySelectorAll('.btn-audio').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const idx = btn.dataset.idx;
+            const playerContainer = container.querySelector(`#audio-player-${idx}`);
+            if (!playerContainer) return;
+
+            if (playerContainer.style.display === 'none') {
+                playerContainer.style.display = 'block';
+                // Auto-play
+                const audio = container.querySelector(`#audio-el-${idx}`);
+                if (audio) {
+                    if (_activeAudio && _activeAudio !== audio) {
+                        _activeAudio.pause();
+                        _activeAudio.currentTime = 0;
+                    }
+                    audio.play();
+                    _activeAudio = audio;
+                    updatePlayBtn(container, idx, true);
+                }
+            } else {
+                playerContainer.style.display = 'none';
+                const audio = container.querySelector(`#audio-el-${idx}`);
+                if (audio) { audio.pause(); audio.currentTime = 0; }
+            }
+        });
+    });
+
+    // Play/pause controls
+    container.querySelectorAll('.btn-audio-ctrl').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const idx = btn.dataset.idx;
+            const audio = container.querySelector(`#audio-el-${idx}`);
+            if (!audio) return;
+
+            if (audio.paused) {
+                if (_activeAudio && _activeAudio !== audio) {
+                    _activeAudio.pause();
+                }
+                audio.play();
+                _activeAudio = audio;
+                updatePlayBtn(container, idx, true);
+            } else {
+                audio.pause();
+                updatePlayBtn(container, idx, false);
+            }
+        });
+    });
+
+    // Speed controls
+    container.querySelectorAll('[data-action="speed"]').forEach(btn => {
+        const speeds = [1, 0.75, 0.5];
+        let speedIdx = 0;
+        btn.addEventListener('click', () => {
+            speedIdx = (speedIdx + 1) % speeds.length;
+            const idx = btn.dataset.idx;
+            const audio = container.querySelector(`#audio-el-${idx}`);
+            if (audio) audio.playbackRate = speeds[speedIdx];
+            btn.textContent = speeds[speedIdx] + 'x';
+        });
+    });
+
+    // Seek bars
+    container.querySelectorAll('.audio-seek').forEach(seek => {
+        seek.addEventListener('input', () => {
+            const idx = seek.dataset.idx;
+            const audio = container.querySelector(`#audio-el-${idx}`);
+            if (audio && audio.duration) {
+                audio.currentTime = (seek.value / 100) * audio.duration;
+            }
+        });
+    });
+
+    // Audio events - update UI
+    container.querySelectorAll('audio').forEach(audio => {
+        const idx = audio.id.replace('audio-el-', '');
+
+        audio.addEventListener('timeupdate', () => {
+            const seek = container.querySelector(`.audio-seek[data-idx="${idx}"]`);
+            const currentEl = container.querySelector(`.audio-current[data-idx="${idx}"]`);
+            if (seek && audio.duration) {
+                seek.value = (audio.currentTime / audio.duration) * 100;
+            }
+            if (currentEl) {
+                currentEl.textContent = formatTime(audio.currentTime);
+            }
+        });
+
+        audio.addEventListener('loadedmetadata', () => {
+            const durEl = container.querySelector(`.audio-duration[data-idx="${idx}"]`);
+            if (durEl) durEl.textContent = formatTime(audio.duration);
+        });
+
+        audio.addEventListener('ended', () => {
+            updatePlayBtn(container, idx, false);
+            const seek = container.querySelector(`.audio-seek[data-idx="${idx}"]`);
+            if (seek) seek.value = 0;
+        });
+    });
+}
+
+function updatePlayBtn(container, idx, isPlaying) {
+    const btn = container.querySelector(`.btn-audio-ctrl[data-idx="${idx}"]`);
+    if (!btn) return;
+    btn.innerHTML = isPlaying
+        ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>'
+        : '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+}
+
+function formatTime(secs) {
+    if (!secs || isNaN(secs)) return '0:00';
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return m + ':' + (s < 10 ? '0' : '') + s;
+}
+
 function renderDua(data) {
     const { prayers } = data;
     if (!prayers || prayers.length === 0) {
@@ -1525,14 +1732,49 @@ function renderDua(data) {
 
     return `
         <div class="dua-list stagger">
-            ${prayers.map(p => `
+            ${prayers.map((p, idx) => {
+                const audioFile = getAudioForPrayer(p.baslik);
+                return `
                 <div class="dua-card anim-fade-in-up">
-                    <h3 class="font-display" style="color: var(--secondary); font-size: 1.3rem;">${p.baslik}</h3>
+                    <div class="dua-card-header" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.75rem;">
+                        <h3 class="font-display" style="color: var(--secondary); font-size: 1.3rem; margin:0;">${p.baslik}</h3>
+                        ${audioFile ? `
+                            <button class="btn-audio" data-audio="assets/audio/${audioFile}" data-idx="${idx}"
+                                    style="background:var(--primary); color:white; border:none; border-radius:50%; width:40px; height:40px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition: all 0.2s;">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                            </button>
+                        ` : ''}
+                    </div>
+                    ${audioFile ? `
+                        <div class="audio-player-container" id="audio-player-${idx}" style="display:none; margin-bottom:1rem;">
+                            <audio id="audio-el-${idx}" preload="none">
+                                <source src="assets/audio/${audioFile}" type="audio/mpeg">
+                            </audio>
+                            <div style="display:flex; align-items:center; gap:0.5rem; padding:0.5rem; background:var(--bg-main); border-radius:12px;">
+                                <button class="btn-audio-ctrl" data-idx="${idx}" data-action="play"
+                                        style="background:var(--primary); color:white; border:none; border-radius:50%; width:36px; height:36px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="play-icon"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                </button>
+                                <div style="flex:1; display:flex; flex-direction:column; gap:2px;">
+                                    <input type="range" class="audio-seek" data-idx="${idx}" min="0" max="100" value="0"
+                                           style="width:100%; height:4px; accent-color:var(--primary); cursor:pointer;">
+                                    <div style="display:flex; justify-content:space-between; font-size:0.7rem; color:var(--text-secondary);">
+                                        <span class="audio-current" data-idx="${idx}">0:00</span>
+                                        <span class="audio-duration" data-idx="${idx}">0:00</span>
+                                    </div>
+                                </div>
+                                <button data-idx="${idx}" data-action="speed"
+                                        style="background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:2px 6px; font-size:0.7rem; cursor:pointer; color:var(--text-primary);">
+                                    1x
+                                </button>
+                            </div>
+                        </div>
+                    ` : ''}
                     <div class="arabic-text">${p.arapca}</div>
                     <div class="transliteration">${p.okunusu}</div>
                     <div class="meaning">${p.anlami}</div>
-                </div>
-            `).join('')}
+                </div>`;
+            }).join('')}
         </div>`;
 }
 

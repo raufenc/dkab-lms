@@ -1,7 +1,7 @@
 // ===== DKAB Akademi - Ilerleme Panosu =====
 
-import { store, BADGES, XP_PER_LEVEL } from '../store.js?v=3';
-import { getAllGrades, getGradeInfo } from '../data-loader.js?v=3';
+import { store, BADGES, XP_PER_LEVEL } from '../store.js?v=4';
+import { getAllGrades, getGradeInfo } from '../data-loader.js?v=4';
 
 export function renderProgressDashboard(el, app) {
     const user = store.user;

@@ -1,16 +1,16 @@
 // ===== DKAB Akademi - Ana Uygulama + Router =====
 
-import { store } from './store.js?v=3';
-import { getGradeInfo, loadGradeEssentials, loadChapterContent, loadGlossary, loadData } from './data-loader.js?v=3';
-import { renderHeader } from './components/header.js?v=3';
-import { renderSidebar } from './components/sidebar.js?v=3';
-import { renderHome } from './components/home.js?v=3';
-import { renderClassSelector } from './components/class-selector.js?v=3';
-import { renderUnitList } from './components/unit-list.js?v=3';
-import { renderChapterView } from './components/chapter-view.js?v=3';
-import { renderGlossary } from './components/glossary.js?v=3';
-import { renderProgressDashboard } from './components/progress-dashboard.js?v=3';
-import { showConfetti, showXpPopup } from './components/effects.js?v=3';
+import { store } from './store.js?v=4';
+import { getGradeInfo, loadGradeEssentials, loadChapterContent, loadGlossary, loadData } from './data-loader.js?v=4';
+import { renderHeader } from './components/header.js?v=4';
+import { renderSidebar } from './components/sidebar.js?v=4';
+import { renderHome } from './components/home.js?v=4';
+import { renderClassSelector } from './components/class-selector.js?v=4';
+import { renderUnitList } from './components/unit-list.js?v=4';
+import { renderChapterView } from './components/chapter-view.js?v=4';
+import { renderGlossary } from './components/glossary.js?v=4';
+import { renderProgressDashboard } from './components/progress-dashboard.js?v=4';
+import { showConfetti, showXpPopup } from './components/effects.js?v=4';
 
 class App {
     constructor() {
