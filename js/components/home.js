@@ -1,7 +1,7 @@
 // ===== DKAB Akademi - Ana Sayfa (Dashboard) =====
 
-import { store, BADGES, XP_PER_LEVEL } from '../store.js';
-import { getGradeInfo } from '../data-loader.js';
+import { store, BADGES, XP_PER_LEVEL } from '../store.js?v=2';
+import { getGradeInfo } from '../data-loader.js?v=2';
 
 export function renderHome(el, app) {
     const user = store.user;

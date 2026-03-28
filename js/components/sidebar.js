@@ -1,7 +1,7 @@
 // ===== DKAB Akademi - Sidebar Bileseni =====
 
-import { store } from '../store.js';
-import { getAllGrades, getGradeInfo } from '../data-loader.js';
+import { store } from '../store.js?v=2';
+import { getAllGrades, getGradeInfo } from '../data-loader.js?v=2';
 
 export function renderSidebar(el, app) {
     const user = store.user;

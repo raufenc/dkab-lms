@@ -1,6 +1,6 @@
 // ===== DKAB Akademi - Sozluk =====
 
-import { getGradeInfo } from '../data-loader.js';
+import { getGradeInfo } from '../data-loader.js?v=2';
 
 export function renderGlossary(el, grade, glossary, app) {
     const gradeInfo = getGradeInfo(grade);
