@@ -5,7 +5,7 @@ import { getGradeInfo } from '../data-loader.js';
 import { showConfetti, showXpPopup, playSound } from './effects.js';
 
 export function renderChapterView(el, data, app) {
-    const { grade, unitId, chapterId, chapter, unit, games, questions, conceptCard, prayers, coverage } = data;
+    const { grade, unitId, chapterId, chapter, unit, games, questions, conceptCard, prayers, coverage, visuals } = data;
     const gradeInfo = getGradeInfo(grade);
 
     // Determine available tabs
@@ -92,7 +92,7 @@ function renderTabContent(tabId, data) {
 
 // ===== LESSON TAB =====
 function renderLesson(data) {
-    const { conceptCard, coverage } = data;
+    const { conceptCard, coverage, visuals } = data;
     if (!conceptCard) {
         return `<div class="card text-center" style="padding: 2rem;">
             <p class="text-muted">Bu bolum icin icerik henuz hazir degil.</p>
@@ -100,9 +100,23 @@ function renderLesson(data) {
     }
 
     const terms = conceptCard.ilgili_terimler || [];
+    const chapterVisuals = visuals || [];
+
+    // Find hero visual (first sahne type, or first available)
+    const heroVisual = chapterVisuals.find(v => v.tur === 'sahne') || chapterVisuals[0];
 
     return `
         <div class="lesson-content anim-fade-in-up">
+            <!-- Hero Visual -->
+            ${heroVisual?.dosya_yolu ? `
+            <div class="chapter-hero-img anim-fade-in" style="margin-bottom: 1.5rem; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
+                <img src="${heroVisual.dosya_yolu}" alt="${heroVisual.sahne_aciklamasi_tr || ''}"
+                     style="width: 100%; height: auto; display: block; max-height: 360px; object-fit: cover;"
+                     loading="lazy">
+                ${heroVisual.sahne_aciklamasi_tr ? `<p style="padding: 0.75rem 1rem; font-size: 0.85rem; color: var(--text-secondary); background: var(--bg-main); margin: 0;">${heroVisual.sahne_aciklamasi_tr}</p>` : ''}
+            </div>
+            ` : ''}
+
             <!-- Summary Card -->
             <div class="card" style="padding: 1.5rem;">
                 <h3 style="margin-bottom: 0.75rem;">&#128218; Konu Ozeti</h3>
@@ -115,6 +129,23 @@ function renderLesson(data) {
                 <h3 style="margin-bottom: 0.75rem;">&#128273; Anahtar Kavramlar</h3>
                 <div class="terms-cloud">
                     ${terms.map(t => `<span class="term-chip">${t}</span>`).join('')}
+                </div>
+            </div>
+            ` : ''}
+
+            <!-- Additional Visuals Gallery -->
+            ${chapterVisuals.length > 1 ? `
+            <div class="card mt-lg" style="padding: 1.5rem;">
+                <h3 style="margin-bottom: 0.75rem;">&#127912; Gorseller</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                    ${chapterVisuals.filter(v => v !== heroVisual).map(v => v.dosya_yolu ? `
+                    <div style="border-radius: 12px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.08); cursor: pointer;" onclick="this.querySelector('img').style.maxHeight = this.querySelector('img').style.maxHeight === 'none' ? '180px' : 'none'">
+                        <img src="${v.dosya_yolu}" alt="${v.sahne_aciklamasi_tr || ''}"
+                             style="width: 100%; max-height: 180px; object-fit: cover; display: block; transition: max-height 0.3s;"
+                             loading="lazy">
+                        ${v.sahne_aciklamasi_tr ? `<p style="padding: 0.5rem; font-size: 0.75rem; color: var(--text-secondary); margin: 0;">${v.sahne_aciklamasi_tr}</p>` : ''}
+                    </div>
+                    ` : '').join('')}
                 </div>
             </div>
             ` : ''}

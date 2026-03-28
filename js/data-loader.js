@@ -78,12 +78,13 @@ async function loadGradeEssentials(grade) {
 
 // Load chapter content (for lesson view)
 async function loadChapterContent(grade, unitId, chapterId) {
-    const [games, questions, conceptCards, prayers, coverage] = await Promise.all([
+    const [games, questions, conceptCards, prayers, coverage, visuals] = await Promise.all([
         loadData(grade, 'games'),
         loadData(grade, 'questions'),
         loadData(grade, 'conceptCards'),
         loadData(grade, 'prayers'),
-        loadData(grade, 'coverage')
+        loadData(grade, 'coverage'),
+        loadData(grade, 'visuals')
     ]);
 
     // Filter for this chapter
@@ -95,13 +96,22 @@ async function loadChapterContent(grade, unitId, chapterId) {
     // Filter prayers by unit
     const unitPrayers = prayers ? prayers.filter(p => p.unite_id === unitId) : [];
 
+    // Filter visuals for this chapter
+    const chapterVisuals = visuals ? visuals.filter(v => v.bolum_id === chapterId) : [];
+
     return {
         games: chapterGames,
         questions: chapterQuestions,
         conceptCard: chapterCard,
         prayers: unitPrayers,
-        coverage: chapterCoverage
+        coverage: chapterCoverage,
+        visuals: chapterVisuals
     };
+}
+
+// Load visuals for a grade
+async function loadVisuals(grade) {
+    return loadData(grade, 'visuals');
 }
 
 // Load glossary for a grade
@@ -152,6 +162,7 @@ export {
     loadChapterContent,
     loadGlossary,
     loadEngines,
+    loadVisuals,
     checkAvailableGrades,
     getGradeInfo,
     getAllGrades,
