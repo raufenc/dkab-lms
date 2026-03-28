@@ -359,14 +359,17 @@ function renderFlashcardGame(container, game, data, app) {
 // ===== MATCHING ENGINE (E03) =====
 function renderMatchingGame(container, game, data, app) {
     store.trackEngine('E03');
-    // Support both formats: ciftler[{terim,tanim}] and parallel terimler[]+tanimlar[]
-    const pairs = game.veri?.ciftler?.map(c => ({
-        term: c.terim || c.on || c.baslik || '',
-        def: c.tanim || c.arka || c.aciklama || ''
-    })) || game.veri?.terimler?.map((t, i) => ({
-        term: typeof t === 'string' ? t : (t.terim || t.baslik || ''),
-        def: game.veri?.tanimlar?.[i] || (typeof t === 'object' ? (t.tanim || t.aciklama || '') : '')
-    })) || [];
+    // Support multiple formats: ciftler, eslesmeler, eslestirmeler, terimler+tanimlar
+    const rawPairs = game.veri?.ciftler || game.veri?.eslesmeler || game.veri?.eslestirmeler || game.veri?.eslesme || [];
+    const pairs = rawPairs.length > 0
+        ? rawPairs.map(c => ({
+            term: c.terim || c.on || c.baslik || '',
+            def: c.tanim || c.arka || c.aciklama || ''
+        }))
+        : (game.veri?.terimler?.map((t, i) => ({
+            term: typeof t === 'string' ? t : (t.terim || t.baslik || ''),
+            def: game.veri?.tanimlar?.[i] || (typeof t === 'object' ? (t.tanim || t.aciklama || '') : '')
+        })) || []);
 
     if (pairs.length === 0) {
         container.innerHTML = '<div class="card text-center" style="padding:2rem;"><p class="text-muted">Eslestirme verisi bulunamadi.</p></div>';
@@ -523,7 +526,11 @@ function renderTrueFalseGame(container, game, data, app) {
 // ===== MINI QUIZ (E01, E19) =====
 function renderMiniQuiz(container, game, data, app) {
     store.trackEngine(game.motor_id || 'E19');
-    const items = game.veri?.sorular || game.veri?.soru_seti || [];
+    let items = game.veri?.sorular || game.veri?.soru_seti || [];
+    // Handle flat single-question format (grade 10/11): {soru, secenekler, dogru_cevap}
+    if (items.length === 0 && game.veri?.soru && game.veri?.secenekler) {
+        items = [{ soru: game.veri.soru, secenekler: game.veri.secenekler, dogru_cevap: game.veri.dogru_cevap, aciklama: game.veri.aciklama }];
+    }
     if (items.length === 0) {
         container.innerHTML = '<div class="card text-center" style="padding:2rem;"><p class="text-muted">Quiz verisi bulunamadi.</p></div>';
         return;
@@ -553,7 +560,7 @@ function renderMiniQuiz(container, game, data, app) {
         }
 
         const q = items[current];
-        const question = q.soru || q.metin || '';
+        const question = q.soru || q.soru_metni || q.metin || '';
         const options = q.secenekler || [];
         const correctAnswer = q.dogru_cevap || q.dogru || '';
 
