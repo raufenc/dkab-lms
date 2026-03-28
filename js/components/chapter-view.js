@@ -1,0 +1,825 @@
+// ===== DKAB Akademi - Bolum Gorunumu =====
+
+import { store } from '../store.js';
+import { getGradeInfo } from '../data-loader.js';
+import { showConfetti, showXpPopup, playSound } from './effects.js';
+
+export function renderChapterView(el, data, app) {
+    const { grade, unitId, chapterId, chapter, unit, games, questions, conceptCard, prayers, coverage } = data;
+    const gradeInfo = getGradeInfo(grade);
+
+    // Determine available tabs
+    const tabs = [];
+    if (conceptCard) tabs.push({ id: 'lesson', label: 'Ders', icon: '&#128218;' });
+    if (games.length > 0) tabs.push({ id: 'games', label: 'Oyunlar', icon: '&#127922;' });
+    if (questions.length > 0) tabs.push({ id: 'quiz', label: 'Quiz', icon: '&#127919;' });
+    if (prayers.length > 0 && (chapter.tur === 'dua' || chapter.tur === 'sure')) {
+        tabs.push({ id: 'dua', label: 'Dua / Sure', icon: '&#128588;' });
+    }
+
+    if (tabs.length === 0) {
+        tabs.push({ id: 'lesson', label: 'Ders', icon: '&#128218;' });
+    }
+
+    el.innerHTML = `
+        <div class="content-area">
+            <!-- Chapter Header -->
+            <div class="chapter-header anim-fade-in-up">
+                <div class="chapter-header-top">
+                    <button class="btn-icon" onclick="history.back()" style="color:var(--text-secondary);">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                    </button>
+                    <div class="chapter-header-info">
+                        <span class="text-muted" style="font-size:0.8rem;">${unit?.baslik || ''}</span>
+                        <h2 class="font-display" style="font-size:1.4rem;">${chapter.baslik}</h2>
+                    </div>
+                </div>
+
+                <!-- Tab bar -->
+                <div class="tab-bar mt-md">
+                    ${tabs.map((t, i) => `
+                        <button class="tab-btn ${i === 0 ? 'active' : ''}" data-tab="${t.id}">
+                            <span>${t.icon}</span>
+                            <span>${t.label}</span>
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+
+            <!-- Tab Content -->
+            <div class="tab-content mt-lg" id="tab-content">
+                ${renderTabContent(tabs[0]?.id, data)}
+            </div>
+        </div>`;
+
+    // Bind tab switching
+    el.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            el.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const tabContent = el.querySelector('#tab-content');
+            tabContent.innerHTML = renderTabContent(btn.dataset.tab, data);
+            tabContent.classList.add('anim-fade-in');
+
+            // Bind quiz if needed
+            if (btn.dataset.tab === 'quiz') {
+                initQuiz(el, data, app);
+            }
+            if (btn.dataset.tab === 'games') {
+                initGames(el, data, app);
+            }
+        });
+    });
+
+    // Init first tab if quiz
+    if (tabs[0]?.id === 'quiz') {
+        initQuiz(el, data, app);
+    }
+    if (tabs[0]?.id === 'games') {
+        initGames(el, data, app);
+    }
+}
+
+function renderTabContent(tabId, data) {
+    switch (tabId) {
+        case 'lesson': return renderLesson(data);
+        case 'games': return renderGames(data);
+        case 'quiz': return renderQuiz(data);
+        case 'dua': return renderDua(data);
+        default: return '<p class="text-muted">Icerik bulunamadi.</p>';
+    }
+}
+
+// ===== LESSON TAB =====
+function renderLesson(data) {
+    const { conceptCard, coverage } = data;
+    if (!conceptCard) {
+        return `<div class="card text-center" style="padding: 2rem;">
+            <p class="text-muted">Bu bolum icin icerik henuz hazir degil.</p>
+        </div>`;
+    }
+
+    const terms = conceptCard.ilgili_terimler || [];
+
+    return `
+        <div class="lesson-content anim-fade-in-up">
+            <!-- Summary Card -->
+            <div class="card" style="padding: 1.5rem;">
+                <h3 style="margin-bottom: 0.75rem;">&#128218; Konu Ozeti</h3>
+                <p style="line-height: 1.8; color: var(--text-secondary);">${conceptCard.ozet}</p>
+            </div>
+
+            <!-- Key Terms -->
+            ${terms.length > 0 ? `
+            <div class="card mt-lg" style="padding: 1.5rem;">
+                <h3 style="margin-bottom: 0.75rem;">&#128273; Anahtar Kavramlar</h3>
+                <div class="terms-cloud">
+                    ${terms.map(t => `<span class="term-chip">${t}</span>`).join('')}
+                </div>
+            </div>
+            ` : ''}
+
+            <!-- Learning Outcomes -->
+            ${coverage?.kazanimlar ? `
+            <div class="card mt-lg" style="padding: 1.5rem;">
+                <h3 style="margin-bottom: 0.75rem;">&#127919; Kazanimlar</h3>
+                <ul class="outcomes-list">
+                    ${coverage.kazanimlar.map(k => `<li>${k}</li>`).join('')}
+                </ul>
+            </div>
+            ` : ''}
+        </div>`;
+}
+
+// ===== GAMES TAB =====
+function renderGames(data) {
+    const { games } = data;
+    if (!games || games.length === 0) {
+        return '<div class="card text-center" style="padding: 2rem;"><p class="text-muted">Bu bolum icin oyun bulunamadi.</p></div>';
+    }
+
+    return `
+        <div class="games-grid stagger">
+            ${games.map((game, i) => `
+                <div class="game-card card card-interactive anim-fade-in-up" data-game-index="${i}">
+                    <div class="game-card-icon">${getEngineIcon(game.motor_id)}</div>
+                    <div class="game-card-info">
+                        <h4>${game.baslik}</h4>
+                        <p class="text-muted" style="font-size:0.8rem;">${game.motor_adi}</p>
+                    </div>
+                    <button class="btn btn-primary btn-sm game-play-btn" data-game-index="${i}">Oyna</button>
+                </div>
+            `).join('')}
+        </div>`;
+}
+
+function initGames(el, data, app) {
+    el.querySelectorAll('.game-play-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = parseInt(btn.dataset.gameIndex);
+            const game = data.games[idx];
+            if (game) {
+                launchGame(el.querySelector('#tab-content'), game, data, app);
+            }
+        });
+    });
+}
+
+function launchGame(container, game, data, app) {
+    const motorId = game.motor_id;
+
+    // Route to appropriate engine
+    switch (motorId) {
+        case 'E02': // Terim Kartlari (Flashcard)
+            renderFlashcardGame(container, game, data, app);
+            break;
+        case 'E03': // Eslestirme
+            renderMatchingGame(container, game, data, app);
+            break;
+        case 'E06': // Dogru-Yanlis
+            renderTrueFalseGame(container, game, data, app);
+            break;
+        case 'E19': // Coktan Secmeli
+            renderMiniQuiz(container, game, data, app);
+            break;
+        case 'E07': // Bosluk Doldurma
+            renderFillBlankGame(container, game, data, app);
+            break;
+        case 'E01': // Hizli On Tarama
+            renderMiniQuiz(container, game, data, app);
+            break;
+        case 'E09': // Sesli Takip - use flashcard style
+        case 'E10': // Anlam Esleme - use flashcard style
+        case 'E23': // Spiral Tekrar
+            renderFlashcardGame(container, game, data, app);
+            break;
+        case 'E11': // Adim Siralama
+            renderOrderingGame(container, game, data, app);
+            break;
+        case 'E21': // Oz Degerlendirme
+            renderChecklistGame(container, game, data, app);
+            break;
+        default:
+            renderGenericGame(container, game, data, app);
+    }
+}
+
+// ===== FLASHCARD ENGINE (E02, E23) =====
+function renderFlashcardGame(container, game, data, app) {
+    const items = game.veri?.terimler || game.veri?.kartlar || game.veri?.satirlar || game.veri?.ciftler || [];
+    if (items.length === 0) {
+        container.innerHTML = '<div class="card text-center" style="padding:2rem;"><p class="text-muted">Kart verisi bulunamadi.</p></div>';
+        return;
+    }
+
+    let currentIndex = 0;
+    let flipped = false;
+
+    function render() {
+        const item = items[currentIndex];
+        const front = item.terim || item.on || item.baslik || item.arapca || item.soru || 'Terim';
+        const back = item.tanim || item.arka || item.aciklama || item.okunusu || item.anlam || item.cevap || 'Tanim';
+
+        container.innerHTML = `
+            <div class="flashcard-container anim-scale-in">
+                <div class="flashcard-progress text-muted mb-md">
+                    ${currentIndex + 1} / ${items.length}
+                </div>
+                <div class="flashcard ${flipped ? 'flipped' : ''}" id="flashcard">
+                    <div class="flashcard-front">
+                        <span class="flashcard-text font-display">${front}</span>
+                        <p class="text-muted mt-md" style="font-size:0.85rem;">Cevirmek icin tikla</p>
+                    </div>
+                    <div class="flashcard-back">
+                        <span class="flashcard-text">${back}</span>
+                    </div>
+                </div>
+                <div class="flashcard-actions mt-lg">
+                    <button class="btn btn-secondary btn-sm" id="fc-prev" ${currentIndex === 0 ? 'disabled' : ''}>&#8592; Onceki</button>
+                    <button class="btn btn-primary btn-sm" id="fc-next">${currentIndex === items.length - 1 ? 'Bitir' : 'Sonraki &#8594;'}</button>
+                </div>
+            </div>`;
+
+        container.querySelector('#flashcard').addEventListener('click', () => {
+            flipped = !flipped;
+            container.querySelector('#flashcard').classList.toggle('flipped');
+        });
+
+        container.querySelector('#fc-prev')?.addEventListener('click', () => {
+            if (currentIndex > 0) { currentIndex--; flipped = false; render(); }
+        });
+
+        container.querySelector('#fc-next')?.addEventListener('click', () => {
+            if (currentIndex < items.length - 1) {
+                currentIndex++;
+                flipped = false;
+                render();
+            } else {
+                // Complete
+                const xp = 15;
+                store.completeChapter(data.grade, data.unitId, data.chapterId, xp, 2);
+                showXpPopup(xp);
+                playSound('complete');
+                renderGames({ games: data.games });
+            }
+        });
+    }
+
+    render();
+}
+
+// ===== MATCHING ENGINE (E03) =====
+function renderMatchingGame(container, game, data, app) {
+    const pairs = game.veri?.terimler?.map((t, i) => ({
+        term: t,
+        def: game.veri?.tanimlar?.[i] || ''
+    })) || [];
+
+    if (pairs.length === 0) {
+        container.innerHTML = '<div class="card text-center" style="padding:2rem;"><p class="text-muted">Eslestirme verisi bulunamadi.</p></div>';
+        return;
+    }
+
+    const shuffledDefs = [...pairs].sort(() => Math.random() - 0.5);
+    let selectedTerm = null;
+    let matched = new Set();
+
+    function render() {
+        container.innerHTML = `
+            <div class="matching-container anim-fade-in-up">
+                <h3 class="mb-md">&#128279; Eslesenleri Bul</h3>
+                <p class="text-muted mb-lg">Sol taraftan bir terim, sag taraftan tanimini sec.</p>
+                <div class="matching-grid">
+                    <div class="matching-col">
+                        ${pairs.map((p, i) => `
+                            <button class="matching-item term-item ${matched.has(i) ? 'matched' : ''} ${selectedTerm === i ? 'selected' : ''}"
+                                    data-index="${i}" ${matched.has(i) ? 'disabled' : ''}>
+                                ${p.term}
+                            </button>
+                        `).join('')}
+                    </div>
+                    <div class="matching-col">
+                        ${shuffledDefs.map((p, i) => `
+                            <button class="matching-item def-item ${matched.has(pairs.indexOf(p)) ? 'matched' : ''}"
+                                    data-orig-index="${pairs.indexOf(p)}" ${matched.has(pairs.indexOf(p)) ? 'disabled' : ''}>
+                                ${p.def}
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="matching-score mt-md text-muted">
+                    ${matched.size} / ${pairs.length} eslesti
+                </div>
+            </div>`;
+
+        // Bind term clicks
+        container.querySelectorAll('.term-item').forEach(btn => {
+            btn.addEventListener('click', () => {
+                container.querySelectorAll('.term-item').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                selectedTerm = parseInt(btn.dataset.index);
+            });
+        });
+
+        // Bind def clicks
+        container.querySelectorAll('.def-item').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (selectedTerm === null) return;
+                const origIndex = parseInt(btn.dataset.origIndex);
+                if (origIndex === selectedTerm) {
+                    matched.add(selectedTerm);
+                    playSound('correct');
+                    selectedTerm = null;
+                    if (matched.size === pairs.length) {
+                        const xp = 20;
+                        store.completeChapter(data.grade, data.unitId, data.chapterId, xp, 3);
+                        showConfetti();
+                        showXpPopup(xp);
+                        playSound('complete');
+                    }
+                    render();
+                } else {
+                    btn.classList.add('answer-wrong');
+                    playSound('wrong');
+                    setTimeout(() => btn.classList.remove('answer-wrong'), 600);
+                }
+            });
+        });
+    }
+
+    render();
+}
+
+// ===== TRUE/FALSE ENGINE (E06) =====
+function renderTrueFalseGame(container, game, data, app) {
+    const items = game.veri?.sorular || game.veri?.ifadeler || [];
+    if (items.length === 0) {
+        container.innerHTML = '<div class="card text-center" style="padding:2rem;"><p class="text-muted">Soru verisi bulunamadi.</p></div>';
+        return;
+    }
+
+    let current = 0;
+    let correct = 0;
+
+    function render() {
+        if (current >= items.length) {
+            const stars = correct === items.length ? 3 : correct >= items.length * 0.7 ? 2 : 1;
+            const xp = correct * 5;
+            store.completeChapter(data.grade, data.unitId, data.chapterId, xp, stars);
+            if (stars === 3) showConfetti();
+            showXpPopup(xp);
+            playSound('complete');
+
+            container.innerHTML = `
+                <div class="quiz-result card anim-bounce-in text-center" style="padding: 2rem;">
+                    <span style="font-size: 3rem;">${stars === 3 ? '&#127942;' : stars === 2 ? '&#11088;' : '&#128170;'}</span>
+                    <h2 class="mt-md">${stars === 3 ? 'Mukemmel!' : stars === 2 ? 'Cok iyi!' : 'Iyi baslangiC!'}</h2>
+                    <p class="text-muted mt-sm">${correct} / ${items.length} dogru</p>
+                    <div class="stars mt-md" style="font-size:2rem; justify-content:center;">
+                        ${'&#11088;'.repeat(stars)}${'&#9734;'.repeat(3 - stars)}
+                    </div>
+                    <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
+                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                </div>`;
+            return;
+        }
+
+        const item = items[current];
+        const statement = item.ifade || item.soru || item.metin || '';
+        const answer = item.dogru_cevap || item.cevap;
+        const isTrue = answer === true || answer === 'Dogru' || answer === 'dogru' || answer === 'D';
+
+        container.innerHTML = `
+            <div class="tf-container anim-fade-in-up">
+                <div class="tf-progress text-muted mb-md">${current + 1} / ${items.length}</div>
+                <div class="progress-bar mb-lg" style="height:4px;">
+                    <div class="fill" style="width:${(current / items.length) * 100}%"></div>
+                </div>
+                <div class="card" style="padding: 2rem; text-align:center; min-height: 120px; display:flex; align-items:center; justify-content:center;">
+                    <p style="font-size: 1.1rem; line-height: 1.6;">${statement}</p>
+                </div>
+                <div class="tf-buttons mt-xl" style="display:flex; gap:1rem;">
+                    <button class="btn btn-lg" id="btn-true" style="flex:1; background:#e8f8ee; color:#1a7a3a; border: 2px solid #4ECB71; font-weight:700;">
+                        &#10004; Dogru
+                    </button>
+                    <button class="btn btn-lg" id="btn-false" style="flex:1; background:#fde8e8; color:#c0392b; border: 2px solid #E74C3C; font-weight:700;">
+                        &#10008; Yanlis
+                    </button>
+                </div>
+            </div>`;
+
+        const checkAnswer = (userAnswer) => {
+            if (userAnswer === isTrue) {
+                correct++;
+                playSound('correct');
+            } else {
+                playSound('wrong');
+            }
+            current++;
+            setTimeout(() => render(), 400);
+        };
+
+        container.querySelector('#btn-true').addEventListener('click', () => checkAnswer(true));
+        container.querySelector('#btn-false').addEventListener('click', () => checkAnswer(false));
+    }
+
+    render();
+}
+
+// ===== MINI QUIZ (E01, E19) =====
+function renderMiniQuiz(container, game, data, app) {
+    const items = game.veri?.sorular || game.veri?.soru_seti || [];
+    if (items.length === 0) {
+        container.innerHTML = '<div class="card text-center" style="padding:2rem;"><p class="text-muted">Quiz verisi bulunamadi.</p></div>';
+        return;
+    }
+
+    let current = 0;
+    let correct = 0;
+
+    function render() {
+        if (current >= items.length) {
+            const stars = correct === items.length ? 3 : correct >= items.length * 0.7 ? 2 : 1;
+            const xp = correct * 5;
+            store.completeChapter(data.grade, data.unitId, data.chapterId, xp, stars);
+            if (stars === 3) showConfetti();
+            showXpPopup(xp);
+            playSound('complete');
+
+            container.innerHTML = `
+                <div class="quiz-result card anim-bounce-in text-center" style="padding: 2rem;">
+                    <span style="font-size: 3rem;">${stars === 3 ? '&#127942;' : '&#11088;'}</span>
+                    <h2 class="mt-md">${correct} / ${items.length} Dogru</h2>
+                    <div class="stars mt-md" style="font-size:2rem; justify-content:center;">${'&#11088;'.repeat(stars)}${'&#9734;'.repeat(3 - stars)}</div>
+                    <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
+                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                </div>`;
+            return;
+        }
+
+        const q = items[current];
+        const question = q.soru || q.metin || '';
+        const options = q.secenekler || [];
+        const correctAnswer = q.dogru_cevap || q.dogru || '';
+
+        container.innerHTML = `
+            <div class="mini-quiz anim-fade-in-up">
+                <div class="progress-bar mb-md" style="height:4px;">
+                    <div class="fill" style="width:${(current / items.length) * 100}%"></div>
+                </div>
+                <p class="text-muted mb-md">${current + 1} / ${items.length}</p>
+                <div class="card" style="padding:1.5rem;">
+                    <p style="font-size:1.05rem; line-height:1.6;">${question}</p>
+                </div>
+                <div class="quiz-options mt-lg">
+                    ${options.map((opt, i) => `
+                        <button class="quiz-option" data-index="${i}" data-value="${typeof opt === 'string' ? opt.charAt(0) : i}">
+                            ${opt}
+                        </button>
+                    `).join('')}
+                </div>
+            </div>`;
+
+        container.querySelectorAll('.quiz-option').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const val = btn.dataset.value;
+                const isCorrect = val === correctAnswer || btn.textContent.trim().startsWith(correctAnswer);
+                if (isCorrect) {
+                    btn.classList.add('answer-correct');
+                    correct++;
+                    playSound('correct');
+                } else {
+                    btn.classList.add('answer-wrong');
+                    playSound('wrong');
+                    // Show correct
+                    container.querySelectorAll('.quiz-option').forEach(b => {
+                        if (b.textContent.trim().startsWith(correctAnswer)) {
+                            b.classList.add('answer-correct');
+                        }
+                    });
+                }
+                // Disable all
+                container.querySelectorAll('.quiz-option').forEach(b => b.disabled = true);
+                current++;
+                setTimeout(() => render(), 1000);
+            });
+        });
+    }
+
+    render();
+}
+
+// ===== ORDERING ENGINE (E11) =====
+function renderOrderingGame(container, game, data, app) {
+    const steps = game.veri?.adimlar || [];
+    if (steps.length === 0) {
+        renderGenericGame(container, game, data, app);
+        return;
+    }
+
+    // Shuffle for the game
+    const shuffled = [...steps].sort(() => Math.random() - 0.5);
+    let userOrder = [...shuffled];
+
+    function render() {
+        container.innerHTML = `
+            <div class="ordering-container anim-fade-in-up">
+                <h3 class="mb-md">&#128290; Dogru Sirayla Dizle</h3>
+                <p class="text-muted mb-lg">${game.hedef || 'Adimlari dogru siraya koy.'}</p>
+                <div class="ordering-list">
+                    ${userOrder.map((step, i) => {
+                        const label = typeof step === 'string' ? step : (step.baslik || step.metin || step.adim || JSON.stringify(step));
+                        return `
+                        <div class="ordering-item card" draggable="false" data-index="${i}">
+                            <span class="ordering-num">${i + 1}</span>
+                            <span class="ordering-text">${label}</span>
+                            <div class="ordering-btns">
+                                <button class="btn btn-sm btn-secondary order-up" data-index="${i}" ${i === 0 ? 'disabled' : ''}>&#9650;</button>
+                                <button class="btn btn-sm btn-secondary order-down" data-index="${i}" ${i === userOrder.length - 1 ? 'disabled' : ''}>&#9660;</button>
+                            </div>
+                        </div>`;
+                    }).join('')}
+                </div>
+                <button class="btn btn-primary btn-lg w-full mt-xl" id="check-order">Kontrol Et</button>
+            </div>`;
+
+        container.querySelectorAll('.order-up').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.dataset.index);
+                if (idx > 0) {
+                    [userOrder[idx], userOrder[idx - 1]] = [userOrder[idx - 1], userOrder[idx]];
+                    render();
+                }
+            });
+        });
+
+        container.querySelectorAll('.order-down').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = parseInt(btn.dataset.index);
+                if (idx < userOrder.length - 1) {
+                    [userOrder[idx], userOrder[idx + 1]] = [userOrder[idx + 1], userOrder[idx]];
+                    render();
+                }
+            });
+        });
+
+        container.querySelector('#check-order')?.addEventListener('click', () => {
+            let correct = 0;
+            userOrder.forEach((item, i) => {
+                if (JSON.stringify(item) === JSON.stringify(steps[i])) correct++;
+            });
+            const stars = correct === steps.length ? 3 : correct >= steps.length * 0.7 ? 2 : 1;
+            const xp = correct * 5;
+            store.completeChapter(data.grade, data.unitId, data.chapterId, xp, stars);
+            if (stars >= 2) showConfetti();
+            showXpPopup(xp);
+            playSound(stars === 3 ? 'complete' : 'correct');
+
+            container.innerHTML = `
+                <div class="quiz-result card anim-bounce-in text-center" style="padding:2rem;">
+                    <span style="font-size:3rem;">${stars === 3 ? '&#127942;' : '&#11088;'}</span>
+                    <h2 class="mt-md">${correct} / ${steps.length} Dogru Siralama</h2>
+                    <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
+                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                </div>`;
+        });
+    }
+
+    render();
+}
+
+// ===== CHECKLIST ENGINE (E21) =====
+function renderChecklistGame(container, game, data, app) {
+    const items = game.veri?.maddeler || [];
+    if (items.length === 0) {
+        renderGenericGame(container, game, data, app);
+        return;
+    }
+
+    const checked = new Set();
+
+    function render() {
+        container.innerHTML = `
+            <div class="checklist-container anim-fade-in-up">
+                <h3 class="mb-md">&#9745; Oz Degerlendirme</h3>
+                <p class="text-muted mb-lg">${game.hedef || 'Asagidaki maddeleri degerlendirin.'}</p>
+                <div class="checklist-items">
+                    ${items.map((item, i) => {
+                        const label = typeof item === 'string' ? item : (item.madde || item.metin || JSON.stringify(item));
+                        return `
+                        <label class="checklist-item card ${checked.has(i) ? 'checked' : ''}">
+                            <input type="checkbox" ${checked.has(i) ? 'checked' : ''} data-index="${i}">
+                            <span class="checklist-check">${checked.has(i) ? '&#9745;' : '&#9744;'}</span>
+                            <span class="checklist-text">${label}</span>
+                        </label>`;
+                    }).join('')}
+                </div>
+                <div class="checklist-progress mt-md text-muted">
+                    ${checked.size} / ${items.length} tamamlandi
+                </div>
+                ${checked.size === items.length ? `
+                    <button class="btn btn-primary btn-lg w-full mt-lg" id="finish-checklist">Tamamla</button>
+                ` : ''}
+            </div>`;
+
+        container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            cb.addEventListener('change', () => {
+                const idx = parseInt(cb.dataset.index);
+                if (cb.checked) { checked.add(idx); playSound('correct'); }
+                else checked.delete(idx);
+                render();
+            });
+        });
+
+        container.querySelector('#finish-checklist')?.addEventListener('click', () => {
+            const xp = 10;
+            store.completeChapter(data.grade, data.unitId, data.chapterId, xp, 3);
+            showConfetti();
+            showXpPopup(xp);
+            playSound('complete');
+            container.innerHTML = `
+                <div class="quiz-result card anim-bounce-in text-center" style="padding:2rem;">
+                    <span style="font-size:3rem;">&#127942;</span>
+                    <h2 class="mt-md">Oz Degerlendirme Tamam!</h2>
+                    <p class="xp-display mt-lg" style="font-size:1.3rem;">+${xp} XP</p>
+                    <button class="btn btn-primary mt-lg" onclick="history.back()">Devam Et</button>
+                </div>`;
+        });
+    }
+
+    render();
+}
+
+// ===== FILL BLANK ENGINE (E07) =====
+function renderFillBlankGame(container, game, data, app) {
+    const items = game.veri?.cumleler || game.veri?.sorular || [];
+    if (items.length === 0) {
+        renderGenericGame(container, game, data, app);
+        return;
+    }
+    // Fallback to mini quiz format
+    renderMiniQuiz(container, game, data, app);
+}
+
+// ===== GENERIC GAME (fallback) =====
+function renderGenericGame(container, game, data, app) {
+    container.innerHTML = `
+        <div class="card anim-fade-in-up text-center" style="padding: 2rem;">
+            <span style="font-size: 3rem;">${getEngineIcon(game.motor_id)}</span>
+            <h3 class="mt-md">${game.baslik}</h3>
+            <p class="text-muted mt-sm">${game.hedef || ''}</p>
+            <p class="text-muted mt-sm" style="font-size:0.8rem;">Motor: ${game.motor_adi} (${game.motor_id})</p>
+            <p class="mt-lg text-muted">Bu oyun motoru yakinda aktif olacak!</p>
+            <button class="btn btn-primary mt-lg" onclick="history.back()">Geri Don</button>
+        </div>`;
+}
+
+// ===== QUIZ TAB (main question bank) =====
+function renderQuiz(data) {
+    const { questions } = data;
+    return `
+        <div class="quiz-container">
+            <div class="card text-center" style="padding: 2rem;">
+                <span style="font-size: 3rem;">&#127919;</span>
+                <h3 class="mt-md">Bolum Quizi</h3>
+                <p class="text-muted mt-sm">${questions.length} soru seni bekliyor</p>
+                <button class="btn btn-primary btn-lg mt-lg" id="start-quiz">Quize Basla</button>
+            </div>
+        </div>`;
+}
+
+function initQuiz(el, data, app) {
+    const startBtn = el.querySelector('#start-quiz');
+    if (!startBtn) return;
+
+    startBtn.addEventListener('click', () => {
+        const container = el.querySelector('#tab-content');
+        const questions = [...data.questions].sort(() => Math.random() - 0.5);
+        let current = 0;
+        let correct = 0;
+
+        function renderQ() {
+            if (current >= questions.length) {
+                const stars = correct === questions.length ? 3 : correct >= questions.length * 0.7 ? 2 : 1;
+                const xp = correct * 10;
+                store.completeChapter(data.grade, data.unitId, data.chapterId, xp, stars);
+                store.recordQuizResult(correct, questions.length);
+                if (stars === 3) showConfetti();
+                showXpPopup(xp);
+                playSound('complete');
+
+                container.innerHTML = `
+                    <div class="quiz-result card anim-bounce-in text-center" style="padding: 2rem;">
+                        <span style="font-size: 4rem;">${stars === 3 ? '&#127942;' : stars === 2 ? '&#11088;' : '&#128170;'}</span>
+                        <h2 class="mt-md font-display">${stars === 3 ? 'Mukemmel Basari!' : stars === 2 ? 'Harika!' : 'Iyi Deneme!'}</h2>
+                        <p class="mt-sm text-muted">${correct} / ${questions.length} dogru cevap</p>
+                        <div class="stars mt-md" style="font-size:2.5rem; justify-content:center; display:flex; gap:4px;">
+                            ${'&#11088;'.repeat(stars)}${'&#9734;'.repeat(3 - stars)}
+                        </div>
+                        <p class="xp-display mt-xl" style="font-size:1.5rem;">+${xp} XP</p>
+                        <div class="flex gap-md justify-center mt-xl">
+                            <button class="btn btn-secondary" onclick="history.back()">Geri Don</button>
+                            <button class="btn btn-primary" id="retry-quiz">Tekrar Dene</button>
+                        </div>
+                    </div>`;
+
+                container.querySelector('#retry-quiz')?.addEventListener('click', () => {
+                    current = 0; correct = 0;
+                    questions.sort(() => Math.random() - 0.5);
+                    renderQ();
+                });
+                return;
+            }
+
+            const q = questions[current];
+            container.innerHTML = `
+                <div class="quiz-question anim-fade-in-up">
+                    <div class="progress-bar mb-md" style="height: 6px;">
+                        <div class="fill accent" style="width: ${(current / questions.length) * 100}%;"></div>
+                    </div>
+                    <div class="flex justify-between items-center mb-lg">
+                        <span class="text-muted">${current + 1} / ${questions.length}</span>
+                        <span class="badge ${q.zorluk === 'kolay' ? 'badge-success' : q.zorluk === 'zor' ? 'badge-warning' : 'badge-info'}">${q.zorluk}</span>
+                    </div>
+                    <div class="card" style="padding: 1.5rem;">
+                        <p style="font-size: 1.1rem; line-height: 1.7;">${q.soru_metni}</p>
+                    </div>
+                    <div class="quiz-options mt-lg stagger">
+                        ${q.secenekler.map((opt, i) => `
+                            <button class="quiz-option anim-fade-in-up" data-letter="${opt.charAt(0)}">${opt}</button>
+                        `).join('')}
+                    </div>
+                </div>`;
+
+            container.querySelectorAll('.quiz-option').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const letter = btn.dataset.letter;
+                    const isCorrect = letter === q.dogru_cevap;
+
+                    if (isCorrect) {
+                        btn.classList.add('answer-correct');
+                        correct++;
+                        playSound('correct');
+                    } else {
+                        btn.classList.add('answer-wrong');
+                        playSound('wrong');
+                        // Highlight correct
+                        container.querySelectorAll('.quiz-option').forEach(b => {
+                            if (b.dataset.letter === q.dogru_cevap) b.classList.add('answer-correct');
+                        });
+                    }
+
+                    // Show explanation
+                    container.querySelectorAll('.quiz-option').forEach(b => b.disabled = true);
+
+                    if (q.aciklama) {
+                        const exp = document.createElement('div');
+                        exp.className = 'quiz-explanation card mt-md anim-fade-in-up';
+                        exp.style.padding = '1rem';
+                        exp.style.background = isCorrect ? '#e8f8ee' : '#fef3e2';
+                        exp.innerHTML = `<p style="font-size:0.9rem;"><strong>${isCorrect ? '&#10004; Dogru!' : '&#10008; Yanlis.'}</strong> ${q.aciklama}</p>`;
+                        container.querySelector('.quiz-question').appendChild(exp);
+                    }
+
+                    current++;
+                    setTimeout(() => renderQ(), isCorrect ? 1000 : 2000);
+                });
+            });
+        }
+
+        renderQ();
+    });
+}
+
+// ===== DUA/SURE TAB =====
+function renderDua(data) {
+    const { prayers } = data;
+    if (!prayers || prayers.length === 0) {
+        return '<div class="card text-center" style="padding: 2rem;"><p class="text-muted">Bu bolum icin dua/sure bulunamadi.</p></div>';
+    }
+
+    return `
+        <div class="dua-list stagger">
+            ${prayers.map(p => `
+                <div class="dua-card anim-fade-in-up">
+                    <h3 class="font-display" style="color: var(--secondary); font-size: 1.3rem;">${p.baslik}</h3>
+                    <div class="arabic-text">${p.arapca}</div>
+                    <div class="transliteration">${p.okunusu}</div>
+                    <div class="meaning">${p.anlami}</div>
+                </div>
+            `).join('')}
+        </div>`;
+}
+
+function getEngineIcon(motorId) {
+    const icons = {
+        'E01': '&#128269;', 'E02': '&#128195;', 'E03': '&#128279;', 'E04': '&#128248;',
+        'E05': '&#128204;', 'E06': '&#9989;', 'E07': '&#9999;', 'E08': '&#128290;',
+        'E09': '&#128266;', 'E10': '&#128161;', 'E11': '&#128736;', 'E12': '&#128270;',
+        'E13': '&#128257;', 'E14': '&#128197;', 'E15': '&#127917;', 'E16': '&#128172;',
+        'E17': '&#128202;', 'E18': '&#128230;', 'E19': '&#127919;', 'E20': '&#128173;',
+        'E21': '&#9745;', 'E22': '&#127941;', 'E23': '&#128260;', 'E24': '&#128200;'
+    };
+    return icons[motorId] || '&#127922;';
+}
